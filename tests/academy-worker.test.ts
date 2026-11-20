@@ -1,0 +1,70 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {join,resolve} from 'node:path';
+import {tmpdir} from 'node:os';
+import {workerHarness} from './helpers/worker-harness.ts';
+import {schema} from '../src/game-core/career.ts';
+import {contractSchema,hire,type Player} from '../src/game-core/recruitment.ts';
+import {migrateCalendar} from '../src/game-core/calendar.ts';
+import {phaseOneSchema} from '../src/game-core/identity.ts';
+import {negotiationSchema} from '../src/game-core/negotiation.ts';
+import {generationVersion} from '../src/game-core/generation.ts';
+import {definitions} from '../src/game-core/attributes.ts';
+import {developPlayer} from '../src/game-core/development.ts';
+
+const base:Player={id:1,nickname:'Young',name:'Young Silva',mode:'MOBA',role:'top',overall:50,organization:null,team:null,country:'BR',birthDay:-6900,portraitIndex:0,estimateLow:65,estimateHigh:75,ceiling:80,
+ attributes:Object.fromEntries(definitions.MOBA.map(key=>['moba_'+key,50]))};
+const catalog={organizations:[],teams:[],leagues:[]};
+
+test('worker promove, treina principal e Academy, recarrega e limpa vínculo encerrado',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'uem-academy-')),path=join(dir,'career.sqlite');let db=new DatabaseSync(path);
+ try{
+   db.exec(schema+contractSchema);migrateCalendar(sql=>db.exec(sql),1);db.exec(phaseOneSchema+negotiationSchema+'PRAGMA user_version=4');
+   db.exec("INSERT INTO careers VALUES('a','Aurora','AUR','BR','MOBA','Normal',100000000,'#aabbcc','animals_wolf','2026',1)");
+   const players=[base,{...base,id:2,nickname:'Main'},{...base,id:3,birthDay:-11000}];
+   db.prepare('INSERT INTO web_career_world VALUES(?,?,?,?)').run('a',42,generationVersion,JSON.stringify(players));
+   const run=(sql:string,bind:(string|number)[])=>{db.prepare(sql).run(...bind);};
+   const read=(sql:string,bind:(string|number)[])=>db.prepare(sql).get(...bind);
+   for(const player of players)hire(run,read,'a',player);
+   db.prepare('INSERT INTO web_imported_players VALUES(?,?,?,?,?)').run('a',-1,JSON.stringify({...base,id:-1,role:'mid'}),1,1);
+   db.exec('DROP TABLE web_player_training');
+   let request=workerHarness(db,catalog);
+   await request('assign-academy',{careerId:'a',playerId:1,academy:true});
+   await request('set-training',{careerId:'a',playerId:1,focus:'mechanics'});
+   await request('set-training',{careerId:'a',playerId:2,focus:'strategy'});
+   await request('assign-academy',{careerId:'a',playerId:-1,academy:true});
+   await request('set-training',{careerId:'a',playerId:-1,focus:'communication'});
+   await assert.rejects(()=>request('assign-academy',{careerId:'a',playerId:3,academy:true}),/16|21/);
+   const contracts=await request('contracts','a');
+   assert.equal(contracts.find((c:any)=>c.player_id===1).academy,1);
+   assert.equal(contracts.find((c:any)=>c.player_id===1).starter,0);
+   assert.equal(contracts.find((c:any)=>c.player_id===2).starter,1);
+   await assert.rejects(()=>request('starter',{careerId:'a',playerId:1}),/Academy/);
+   await request('facility-upgrade',{careerId:'a',kind:'training',expectedLevel:0});
+   await request('facility-upgrade',{careerId:'a',kind:'academy',expectedLevel:0});
+   await request('advance',{careerId:'a',expectedDay:1,days:30});
+   const world=await request('world-players','a');
+   assert.ok(world.find((p:Player)=>p.id===1).attributes.moba_mechanics>world.find((p:Player)=>p.id===2).attributes.moba_mechanics);
+   assert.ok(world.find((p:Player)=>p.id===2).attributes.moba_reading>world.find((p:Player)=>p.id===1).attributes.moba_reading);
+   const withoutFacility=developPlayer(base,1,31,[{focus:'mechanics',fromDay:1,toDay:365}]);
+   assert.ok(world.find((p:Player)=>p.id===1).attributes.moba_mechanics>withoutFacility.attributes.moba_mechanics);
+   const imported=(await request('imported-players','a'))[0];
+   assert.ok(imported.attributes.moba_communication>imported.attributes.moba_mechanics);
+   const before=JSON.stringify(await request('training','a'));
+   db.close();db=new DatabaseSync(path);request=workerHarness(db,catalog);
+   assert.equal(JSON.stringify(await request('training','a')),before);
+   assert.deepEqual(JSON.parse(JSON.stringify(await request('world-players','a'))),JSON.parse(JSON.stringify(world)));
+   await request('assign-academy',{careerId:'a',playerId:1,academy:false});
+   assert.equal((await request('contracts','a')).find((c:any)=>c.player_id===1).academy,0);
+   assert.equal(Number(db.prepare('SELECT COUNT(*) n FROM web_contracts').get()!.n),3);
+   await request('depart-player',{careerId:'a',playerId:1});
+   assert.ok(!(await request('training','a')).some((t:any)=>t.player_id===1));
+   db.exec('UPDATE web_contracts SET end_day=32 WHERE player_id=2');
+   await request('advance',{careerId:'a',expectedDay:31,days:7});
+   assert.ok(!(await request('training','a')).some((t:any)=>t.player_id===2));
+   assert.ok(!(await request('contracts','a')).some((c:any)=>c.player_id===2));
+   assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+ }finally{db.close();if(!resolve(dir).startsWith(resolve(tmpdir(),'uem-academy-')))throw Error('Diretório temporário inesperado.');rmSync(dir,{recursive:true,force:true});}
+});
