@@ -1,5 +1,6 @@
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
-import {schema,careerInput,deleteCareer,validateSaveName,type Career} from '../game-core/career';
+import {schema,careerInput,deleteCareer,validateSaveName,saveVersionSchema,type Career} from '../game-core/career';
+import {careerCreationVersion} from '../version';
 import {contractSchema,selectStarter,type Contract,type Player} from '../game-core/recruitment';
 import {advanceCareerDay,calendarVersion,migrateCalendar} from '../game-core/calendar';
 import {defaultIdentity,phaseOneSchema,validateIdentity} from '../game-core/identity';
@@ -26,12 +27,13 @@ import {newsSchema,synchronizeNews,listNews,processMoodEvent,recordDevelopmentNe
 import {migrateZeroSigningBonus} from '../game-core/contract-migration';
 
 const webVersion=10;
-const careerQuery=`SELECT careers.*, w.config, COALESCE(s.name,'') AS saveName,
+const careerQuery=`SELECT careers.*, w.config, COALESCE(s.name,'') AS saveName, v.created_version AS createdVersion,
  e.league_id AS entryLeague,e.kind AS entryKind,e.displaced_team_id AS displacedTeam,
  EXISTS(SELECT 1 FROM web_godot_source g WHERE g.career_id=careers.id) AS hasGodotSource,
  MIN(100,40+COALESCE((SELECT SUM(reputation) FROM web_competition_awards a WHERE a.career_id=careers.id AND a.organization='career'),0)) AS reputation
  FROM careers LEFT JOIN web_identity w ON w.career_id=careers.id
- LEFT JOIN web_save_names s ON s.career_id=careers.id LEFT JOIN web_career_entry e ON e.career_id=careers.id`;
+ LEFT JOIN web_save_names s ON s.career_id=careers.id LEFT JOIN web_career_entry e ON e.career_id=careers.id
+ LEFT JOIN web_save_versions v ON v.career_id=careers.id`;
 function hydrate(row:Record<string,unknown>|undefined){
  if(!row)return undefined;
  const {config,entryLeague,entryKind,displacedTeam,...data}=row;
@@ -76,7 +78,7 @@ const initialized=(async()=>{
  if(/CHECK\s*\(\s*bonus\s*>\s*0\s*\)/i.test(String(db.selectValue("SELECT sql FROM sqlite_schema WHERE name='web_contracts'")))){
    migrateZeroSigningBonus(sql=>{db.exec(sql);});
  }
- db.exec(contractSchema+phaseOneSchema+negotiationSchema+matchSchema+competitionSchema+newsSchema);
+ db.exec(contractSchema+phaseOneSchema+negotiationSchema+matchSchema+competitionSchema+newsSchema+saveVersionSchema);
  db.transaction(()=>{
    for(const row of db.selectObjects('SELECT id FROM careers'))initializeFinance((sql,bind)=>{db.exec({sql,bind});},(sql,bind)=>db.selectObject(sql,bind),(sql,bind)=>db.selectObjects(sql,bind),String(row.id));
    db.exec('PRAGMA user_version=10;');
@@ -178,6 +180,7 @@ async function handleRequest(event:MessageEvent){
  const world=addRankedProspects(generateWorld(await loadPlayers(),seed),seed);
  db.transaction(()=>{
    db.exec({sql:'INSERT INTO careers(id,name,code,country,mode,difficulty,balance,color,symbol,created) VALUES(?,?,?,?,?,?,?,?,?,?)',bind:[careerId,c.name,c.code,c.country,c.mode,c.difficulty,c.balance,c.color,c.symbol,new Date().toISOString()]});
+   db.exec({sql:'INSERT INTO web_save_versions VALUES(?,?)',bind:[careerId,careerCreationVersion]});
    db.exec({sql:'INSERT INTO web_identity VALUES(?,?)',bind:[careerId,JSON.stringify(identity)]});
    writeEntry(careerId,entry);
    db.exec({sql:'INSERT INTO web_career_world VALUES(?,?,?,?)',bind:[careerId,seed,generationVersion,JSON.stringify(world)]});
@@ -270,7 +273,7 @@ async function handleRequest(event:MessageEvent){
  const world=typeof stored==='string'?JSON.parse(stored) as Player[]:await loadPlayers();
  const imported=all('SELECT data FROM web_imported_players WHERE career_id=?',[current.id]).map(row=>JSON.parse(String(row.data)) as Player);
  db.transaction(()=>synchronizeNews(run,read,all,current,[...world,...imported],catalog));
- result=listNews(read,all,current.id,input.filter??{});
+ result=listNews(read,all,current.id,input.filter??{},[...world,...imported]);
  }else if(action==='finance-state'){
  const current=get(input.careerId);if(!current)throw Error('Carreira não encontrada.');
  initializeFinance(run,read,all,current.id);refreshSponsorOffers(run,read,current.id,current.day,current.reputation??40);

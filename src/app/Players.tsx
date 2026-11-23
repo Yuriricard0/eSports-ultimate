@@ -11,6 +11,7 @@ import {styleOf} from '../game-core/team-analysis';
 import type {Career} from '../game-core/career';
 import {type Contract,type Player} from '../game-core/recruitment';
 import {currentPlayerSituation} from '../game-core/news';
+import {useViewPreference} from './view-preferences';
 
 export const money = (cents:number) => '$ '+(cents/100).toLocaleString('pt-BR');
 const regions=new Intl.DisplayNames(['pt-BR'],{type:'region'});
@@ -33,23 +34,35 @@ export function Players({career,players,contracts,organizations,view,onFinish,on
   onUpdated:(career:Career)=>Promise<void>;
   initialPlayerId?:number|null;
 }) {
-  const [search,setSearch]=useState('');
+  const scope=`${career.id}:${view}:`;
+  const [search,setSearch]=useViewPreference(scope+'search','');
   const [page,setPage]=useState(0);
   const [offer,setOffer]=useState<Player|null>(null);
   const [busy,setBusy]=useState(false);
   const rankedView=view==='ranked';
-  const [mode,setMode]=useState(rankedView||view==='market'?career.mode:'');
+  const [mode,setMode]=useViewPreference(scope+'mode',rankedView||view==='market'?career.mode:'');
   const [contractAction,setContractAction]=useState<{player:Player;action:'renew'|'sell'|'release'}|null>(null);
-  const [availability,setAvailability]=useState('');
-  const [country,setCountry]=useState('');
-  const [role,setRole]=useState('');
-  const [rankedOnly,setRankedOnly]=useState(false);
+  const [availability,setAvailability]=useViewPreference(scope+'availability','');
+  const [country,setCountry]=useViewPreference(scope+'country','');
+  const [role,setRole]=useViewPreference(scope+'role','');
+  const [rankedOnly,setRankedOnly]=useViewPreference(scope+'rankedOnly',false);
+  const [sort,setSort]=useViewPreference(scope+'sort',rankedView?'points':'overall');
+  const [ascending,setAscending]=useViewPreference(scope+'ascending',false);
   const [profileId,setProfileId]=useState<number|null>(initialPlayerId??null);
   const profile=players.find(player=>player.id===profileId)??null;
   const setProfile=(player:Player|null)=>setProfileId(player?.id??null);
   const [selected,setSelected]=useState<Player[]>([]);
   const [comparing,setComparing]=useState(false);
   const byPlayer=new Map(contracts.map(contract=>[contract.player_id,contract]));
+  const sortValue=(player:Player)=>{
+    switch(sort){
+      case 'points':return rankedStats(player).points;
+      case 'age':return playerAge(player,career.day);
+      case 'salary':return byPlayer.get(player.id)?.salary??0;
+      case 'value':return player.organization?transferValue(player):0;
+      default:return player.overall;
+    }
+  };
   const filtered=players.filter(player=>{
     if(view==='roster' && player.mode!==career.mode) return false;
     if((view==='players'||rankedView||view==='market') && mode && player.mode!==mode) return false;
@@ -60,7 +73,7 @@ export function Players({career,players,contracts,organizations,view,onFinish,on
     if(view==='market' && (byPlayer.has(player.id) || player.status || (availability==='free'&&player.organization) || (availability==='club'&&!player.organization))) return false;
     const organization=player.organization ? organizations[player.organization] : '';
     return [player.nickname,player.name,roleNames[player.role],organization].join(' ').toLowerCase().includes(search.trim().toLowerCase());
-  }).sort((a,b)=>(rankedView?rankedStats(b).points-rankedStats(a).points:b.overall-a.overall)||a.id-b.id);
+  }).sort((a,b)=>(ascending?1:-1)*(sortValue(a)-sortValue(b))||a.id-b.id);
   const rankById=new Map<number,number>();
   if(rankedView){
     const leaders=players.filter(player=>player.status==='ranked'&&player.mode===mode&&(!country||player.country===country))
@@ -96,6 +109,13 @@ export function Players({career,players,contracts,organizations,view,onFinish,on
       </select>
       {view==='players'&&<label className="compare-choice"><input type="checkbox" checked={rankedOnly}
         onChange={event=>{setRankedOnly(event.target.checked);setPage(0);}}/> Apenas jovens da ranked</label>}
+      <select aria-label="Ordenar jogadores" value={sort} onChange={event=>{setSort(event.target.value);setPage(0);}}>
+        {rankedView&&<option value="points">Pontos da ranked</option>}
+        <option value="overall">Overall</option><option value="age">Idade</option>
+        {view==='roster'&&<option value="salary">Salário</option>}
+        {view==='market'&&<option value="value">Valor estimado</option>}
+      </select>
+      <button onClick={()=>{setAscending(!ascending);setPage(0);}}>{ascending?'Menor primeiro ↑':'Maior primeiro ↓'}</button>
     </div>
     {profile&&<section className="panel profile-panel" aria-label="Perfil do jogador">
       <div className="profile-heading"><PlayerPortrait index={profile.portraitIndex}/><div><h2>{profile.nickname}</h2><p>{profile.name} · {roleNames[profile.role]} · {regions.of(profile.country)}</p></div><button onClick={()=>setProfile(null)}>Fechar perfil</button></div>

@@ -1,1 +1,2 @@
-export const alphaVersion='V1 Alpha · 1.0.0-alpha.1';
+export const careerCreationVersion='1.1.0';
+export const gameVersion=`v${careerCreationVersion}`;

@@ -1,4 +1,4 @@
-import {alphaVersion} from '../version';
+import {gameVersion} from '../version';
 import {NewsPageView} from './News';
 import {Finances} from './Finances';
 import {Competitions} from './Competitions';
@@ -7,22 +7,27 @@ import {Academy} from './Academy';
 import {CareerTimeline} from './CareerTimeline';
 import {countries,countryRegions} from '../game-core/countries';
 import {CareerCalendar} from './CareerCalendar';
-import type {CalendarResult} from '../game-core/calendar';
+import {formatCareerDay,type CalendarResult} from '../game-core/calendar';
+import {seasonBoundaries} from '../game-core/renewal';
 import {WorldDirectory} from './WorldDirectory';
 import type {WorldCatalog} from '../game-core/world';
 import {CareerDashboard} from './CareerDashboard';
 import {Emblem,IdentityEditor} from './IdentityEditor';
+import {EmblemDownload} from './EmblemDownload';
 import {defaultIdentity,type Identity} from '../game-core/identity';
 import {maxBackupBytes} from '../game-core/backup';
 import {GameSettings} from './GameSettings';
 import {useEffect,useRef,useState} from 'react';
 import {budgets,type Career} from '../game-core/career';
+import {observeSaveStatus,type SaveStatus} from '../game-core/save-status';
 import {initialize,listCareers,createCareer,exportCareers,listContracts,finishOffer,removeCareer,advanceDays,importCareers,exportGodotSource,saveIdentity,renameSave,listImportedPlayers,listWorldPlayers,setStarter} from '../persistence/repository';
 import {Players,money} from './Players';
 import type {Contract,Player} from '../game-core/recruitment';
 const steps=['Organização','Modalidade','Identidade','Dificuldade','Confirmação'];
 export function App(){
  const activeCareerId=useRef<string|null>(null);
+ const [saveStatus,setSaveStatus]=useState<SaveStatus>();
+ useEffect(()=>observeSaveStatus(setSaveStatus),[]);
  const [newsPlayer,setNewsPlayer]=useState<number|null>(null);
  const openNewsPlayer=(id:number)=>{setNewsPlayer(id);setScreen('players');};
  const [competitionFixture,setCompetitionFixture]=useState('');
@@ -34,6 +39,7 @@ export function App(){
  const [lastId,setLastId]=useState(()=>localStorage.getItem('uem:last-career')??'');
  const [advancing,setAdvancing]=useState(false);
  const [calendarReport,setCalendarReport]=useState<{id:string;report:CalendarResult}|null>(null);
+ const [anniversary,setAnniversary]=useState<{id:string;day:number}|null>(null);
  const [pendingDeletion,setPendingDeletion]=useState<Career|null>(null);
  const [deleting,setDeleting]=useState(false);
  const [catalogPlayers,setPlayers]=useState<Player[]>([]);
@@ -57,6 +63,7 @@ export function App(){
    setNewsPlayer(null);
    setCompetitionFixture('');
    setCareer(candidate);
+   setAnniversary(null);
    setScreen('dashboard');
    localStorage.setItem('uem:last-career',candidate.id);
    setLastId(candidate.id);
@@ -114,6 +121,8 @@ export function App(){
      if(activeCareerId.current===updated.id){
        setWorld({id:updated.id,rows:players});setImported({id:updated.id,rows:legacy});setCareer(updated);
        setContractState({careerId:updated.id,rows});setCalendarReport({id:updated.id,report});
+       const birthday=seasonBoundaries(career.day,updated.day)[0];
+       if(birthday!==undefined)setAnniversary({id:updated.id,day:birthday});
      }
      setSaves(await listCareers());
    }catch(error){setError(error instanceof Error?error.message:String(error));}
@@ -134,9 +143,16 @@ export function App(){
  const sourceBackup=async(id:string)=>{try{download(await exportGodotSource(id),'carreira-original-godot.sqlite');}catch(error){setError(String(error));}};
  const emblem=(c:Career)=><Emblem identity={currentIdentity(c)} code={c.code}/>;
  return <div className={screen==='menu'?'opening':screen==='wizard'?'application career-stage':'application career-hub'}>
+ {saveStatus&&<div className="save-status" role="status">{saveStatus}</div>}
+ {career&&anniversary?.id===career.id&&!['menu','wizard','saves','settings','credits','editor'].includes(screen)&&
+   <div className="career-anniversary" role="status">Feliz aniversário, {career.name}! A organização celebra mais um ano.
+     <button aria-label="Fechar aviso de aniversário" onClick={()=>setAnniversary(null)}>×</button>
+   </div>}
+ {career&&!['menu','wizard','saves','settings','credits','editor'].includes(screen)&&
+   <small className="career-version">Save · {career.createdVersion?`v${career.createdVersion}`:'Versão anterior'}</small>}
  {['wizard','saves','settings','credits','editor'].includes(screen)&&<header><button className="brand" onClick={()=>setScreen('menu')}>ULTIMATE <span>ESPORTS MANAGER</span></button><div className="status">{ready?'● Armazenamento local conectado':'Conectando armazenamento…'}</div></header>}
  {error&&<div className="error" role="alert">{error}<button onClick={()=>setError('')} aria-label="Fechar aviso">×</button></div>}
- {screen==='menu'?<main className="menu"><div className="eyebrow">CONSTRUA SUA ORGANIZAÇÃO. ESCREVA SUA HISTÓRIA.</div><h1>ULTIMATE<br/><span>ESPORTS</span><br/>MANAGER</h1><p>Do primeiro elenco ao cenário mundial.</p><div className="menu-actions"><button className="primary" disabled={!ready} onClick={()=>{setStep(0);setScreen('wizard');}}>Nova carreira <span>↗</span></button><button disabled={!ready||!saves.length} onClick={()=>{openCareer(saves.find(save=>save.id===lastId)??saves[0]);}}>Continuar <span>→</span></button><button disabled={!ready} onClick={()=>setScreen('saves')}>Carreiras salvas <span>{saves.length}</span></button><button onClick={()=>setScreen('organizations')}>Explorar organizações <span>556</span></button><button onClick={()=>setScreen('editor')}>Editor de escudo</button><button onClick={()=>setScreen('settings')}>Configurações</button><button onClick={()=>setScreen('credits')}>Créditos</button></div><small>WEB · {alphaVersion}<br/>{ready?'Saves locais em SQLite':'Preparando armazenamento seguro…'}</small></main>:
+ {screen==='menu'?<main className="menu"><div className="eyebrow">CONSTRUA SUA ORGANIZAÇÃO. ESCREVA SUA HISTÓRIA.</div><h1>ULTIMATE<br/><span>ESPORTS</span><br/>MANAGER</h1><p>Do primeiro elenco ao cenário mundial.</p><div className="menu-actions"><button className="primary" disabled={!ready} onClick={()=>{setStep(0);setScreen('wizard');}}>Nova carreira <span>↗</span></button><button disabled={!ready||!saves.length} onClick={()=>{openCareer(saves.find(save=>save.id===lastId)??saves[0]);}}>Continuar <span>→</span></button><button disabled={!ready} onClick={()=>setScreen('saves')}>Carreiras salvas <span>{saves.length}</span></button><button onClick={()=>setScreen('organizations')}>Explorar organizações <span>556</span></button><button onClick={()=>setScreen('editor')}>Editor de escudo</button><button onClick={()=>setScreen('settings')}>Configurações</button><button onClick={()=>setScreen('credits')}>Créditos</button></div><small>WEB · {gameVersion}<br/>{ready?'Saves locais em SQLite':'Preparando armazenamento seguro…'}</small></main>:
  screen==='wizard'?<main className="wizard"><h1>Nova carreira</h1><nav className="steps">{steps.map((s,i)=><span key={s} className={i===step?'active':''} aria-current={i===step?'step':undefined}><b>{i+1}</b>{s}</span>)}</nav><section className="panel"><h2>{steps[step]}</h2>
  {step===0&&<div className="fields"><label>Nome da organização<input maxLength={60} value={form.name} onChange={e=>update('name',e.target.value)} placeholder="Como sua organização será conhecida?"/></label><label>Sigla · até 3 letras<input maxLength={3} value={form.code} onChange={e=>update('code',e.target.value.replace(/[^a-z]/gi,'').toUpperCase().slice(0,3))} placeholder="UEM"/></label><label>País<select value={form.country} onChange={e=>update('country',e.target.value)}>{Object.entries(countries).map(([id,n])=><option value={id} key={id}>{n}</option>)}</select></label><label>Região<input readOnly value={countryRegions[form.country]??''}/></label></div>}
 
@@ -148,7 +164,7 @@ export function App(){
  </button>)}</div>}
  {step===2&&<IdentityEditor value={draftIdentity} onChange={setDraftIdentity} code={form.code}/>}
  {step===3&&<div className="choices">{Object.entries(budgets).map(([d,b])=><button key={d} className={form.difficulty===d?'selected':''} onClick={()=>update('difficulty',d)}><h3>{d}</h3><strong>{money(b)}</strong><p>Capital inicial</p></button>)}</div>}
- {step===4&&<div className="identity"><Emblem identity={draftIdentity} code={form.code}/><div><h2>{form.name} · {form.code}</h2><p>{countries[form.country]} · {countryRegions[form.country]} · {form.mode}</p><p>{form.difficulty} · {money(budgets[form.difficulty])}</p><p className="muted">Sua organização começa com o elenco vazio. Use o mercado para contratar agentes livres.</p></div></div>}
+ {step===4&&<div className="identity"><Emblem identity={draftIdentity} code={form.code}/><div><h2>{form.name} · {form.code}</h2><p>{countries[form.country]} · {countryRegions[form.country]} · {form.mode==='FPS'?'Counter-Strike 2':'League of Legends'}</p><p>Dificuldade {form.difficulty} · Caixa inicial {money(budgets[form.difficulty])}</p><p>Fundação em {formatCareerDay(1)}</p><p className="muted">Sua organização começa com o elenco vazio. Use o mercado para contratar agentes livres.</p></div></div>}
  </section><footer><button onClick={()=>step?setStep(step-1):setScreen('menu')}>← Voltar</button><button className="primary" disabled={!ready||busy||(step===0&&(!form.name.trim()||!form.code.trim()))} onClick={()=>step===4?start():setStep(step+1)}>{busy?'Salvando…':step===4?'Criar carreira':'Próximo →'}</button></footer></main>:
 
 
@@ -188,7 +204,7 @@ export function App(){
    {!saves.length&&<p>Nenhuma carreira criada ainda.</p>}
    {saves.map(c=><article className="save-card" key={c.id}>
      <button className="save-row" aria-label={'Abrir carreira '+c.name} onClick={()=>{setPendingDeletion(null);openCareer(c);}}>
-       {emblem(c)}<div><h2>{c.saveName||c.name}</h2><p>{c.saveName?c.name+' · ':''}{c.mode} · {c.difficulty} · Dia {c.day}</p></div><strong>{money(c.balance)} →</strong>
+       {emblem(c)}<div><h2>{c.saveName||c.name}</h2><p>{c.saveName?c.name+' · ':''}{c.mode} · {c.difficulty} · Dia {c.day}</p><small>{c.createdVersion?`Criada na v${c.createdVersion}`:'Versão anterior'}</small></div><strong>{money(c.balance)} →</strong>
      </button>
      <button disabled={busy||deleting} aria-label={'Renomear save '+c.name} onClick={()=>{setPendingDeletion(null);setRenameDraft({id:c.id,name:c.saveName||c.name});}}>Renomear</button>
      <button className="delete-save" aria-label={'Excluir carreira '+c.name} disabled={deleting} onClick={()=>{setRenameDraft(null);setPendingDeletion(c);}}>Excluir</button>
@@ -208,6 +224,7 @@ export function App(){
      {importing&&<p role="status">Validando e importando…</p>}
    </section>
  </main>:
- <div className="layout"><aside>{career&&emblem(career)}<strong>{career?.name||'Mundo competitivo'}</strong>{[['dashboard','Central'],['organizations','Organizações'],['leagues','Ligas e circuitos'],['calendar','Calendário'],['timeline','Linha do tempo'],['roster','Elenco'],['academy','Academy'],['training','Treinamento'],['matches','Partidas'],['competitions','Competições'],['finances','Finanças'],['news','Notícias'],['players','Jogadores'],['ranked','Ranked'],['market','Mercado'],['saves','Carreiras salvas']].map(([key,label])=><button className={screen===key?'current':''} key={key} disabled={['dashboard','calendar','timeline','roster','academy','training','matches','competitions','finances','news','players','ranked','market'].includes(key)&&!career} onClick={()=>{if(key==='matches')setCompetitionFixture('');if(key==='players')setNewsPlayer(null);setScreen(key);}}>{label}</button>)}<button disabled={!career} onClick={editIdentity}>Identidade</button><button onClick={()=>setScreen('menu')}>← Menu principal</button></aside><main className="content">{screen==='organizations'||screen==='leagues'?catalog?<WorldDirectory catalog={catalog} players={players} view={screen} onNavigate={setScreen} career={career}/>:<p>Catálogo indisponível.</p>:career&&['roster','players','ranked','market'].includes(screen)?!worldReady?<p role="status">Carregando jogadores da carreira…</p>:<Players key={career.id+screen+String(newsPlayer)} initialPlayerId={newsPlayer} career={career} players={players} contracts={contracts} organizations={Object.fromEntries((catalog?.organizations??[]).map(org=>[org.id,org.name]))} view={screen} onFinish={sign} onStarter={changeStarter} onUpdated={refreshRoster}/>:career&&screen==='news'?!worldReady?<p role="status">Carregando acontecimentos…</p>:<NewsPageView key={career.id} career={career} players={players} contracts={contracts} catalog={catalog} onPlayer={openNewsPlayer} onFixture={openCompetitionFixture} onNavigate={setScreen}/>:career&&screen==='finances'?<Finances key={career.id} career={career} players={players} onUpdated={refreshRoster} onCalendar={()=>setScreen('calendar')}/>:career&&screen==='competitions'?!worldReady?<p role="status">Carregando participantes…</p>:<Competitions key={career.id} career={career} onOpenFixture={openCompetitionFixture}/>:career&&screen==='matches'?!worldReady||!catalog?<p role="status">Carregando elencos…</p>:<Matches key={career.id+competitionFixture} fixtureId={competitionFixture||undefined} onCompetitions={()=>setScreen('competitions')} career={career} players={players} contracts={contracts} catalog={catalog} onUpdated={refreshRoster} onRoster={()=>setScreen('roster')}/>:career&&(screen==='academy'||screen==='training')?!worldReady?<p role="status">Carregando jogadores da carreira…</p>:<Academy key={career.id+screen} career={career} players={players} contracts={contracts} view={screen} onUpdated={refreshRoster} onMarket={()=>setScreen('market')}/>:career&&screen==='timeline'?<CareerTimeline key={career.id} career={career} players={players} contracts={contracts}/>:career&&screen==='calendar'?<CareerCalendar key={career.id} career={career} players={players} advance={advance} busy={advancing} report={calendarReport?.id===career.id?calendarReport.report:undefined} onMatches={()=>{setCompetitionFixture('');setScreen('matches');}} onCompetitions={()=>setScreen('competitions')} onOpenFixture={openCompetitionFixture}/>:career&&screen==='identity'?<><h1>Identidade da organização</h1><IdentityEditor value={draftIdentity} code={career.code} onChange={setDraftIdentity}/><footer><button disabled={busy} onClick={()=>setScreen('dashboard')}>Cancelar</button><button className="primary" disabled={busy} onClick={commitIdentity}>Salvar identidade</button></footer></>:career&&<CareerDashboard catalog={catalog} onNewsPlayer={openNewsPlayer} onNewsFixture={openCompetitionFixture} career={career} country={countries[career.country]??career.country} players={players} contracts={contracts} emblem={emblem(career)} leagueName={catalog?.leagues.find(league=>league.id===career.entry?.leagueId)?.name} navigate={screen=>{if(screen==='matches')setCompetitionFixture('');if(screen==='players')setNewsPlayer(null);setScreen(screen);}} advance={()=>advance(1)} busy={advancing}/>}</main></div>}
+ <div className="layout"><aside>{career&&emblem(career)}<strong>{career?.name||'Mundo competitivo'}</strong>{[['dashboard','Central da Carreira'],['organizations','Organizações'],['leagues','Ligas e circuitos'],['calendar','Calendário'],['timeline','Linha do tempo'],['roster','Elenco'],['academy','Academy'],['training','Treinamento'],['matches','Partidas'],['competitions','Competições'],['finances','Finanças'],['news','Notícias'],['players','Jogadores'],['ranked','Ranked'],['market','Mercado'],['saves','Carreiras salvas']].map(([key,label])=><button className={screen===key?'current':''} key={key} disabled={['dashboard','calendar','timeline','roster','academy','training','matches','competitions','finances','news','players','ranked','market'].includes(key)&&!career} onClick={()=>{if(key==='matches')setCompetitionFixture('');if(key==='players')setNewsPlayer(null);setScreen(key);}}>{label}</button>)}<button disabled={!career} onClick={editIdentity}>Identidade</button><button onClick={()=>setScreen('menu')}>← Menu principal</button></aside><main className="content">{screen==='organizations'||screen==='leagues'?catalog?<WorldDirectory key={(career?.id??'guest')+screen} catalog={catalog} players={players} view={screen} onNavigate={setScreen} career={career}/>:<p>Catálogo indisponível.</p>:career&&['roster','players','ranked','market'].includes(screen)?!worldReady?<p role="status">Carregando jogadores da carreira…</p>:<Players key={career.id+screen+String(newsPlayer)} initialPlayerId={newsPlayer} career={career} players={players} contracts={contracts} organizations={Object.fromEntries((catalog?.organizations??[]).map(org=>[org.id,org.name]))} view={screen} onFinish={sign} onStarter={changeStarter} onUpdated={refreshRoster}/>:career&&screen==='news'?!worldReady?<p role="status">Carregando acontecimentos…</p>:<NewsPageView key={career.id} career={career} players={players} contracts={contracts} catalog={catalog} onPlayer={openNewsPlayer} onFixture={openCompetitionFixture} onNavigate={setScreen}/>:career&&screen==='finances'?<Finances key={career.id} career={career} players={players} onUpdated={refreshRoster} onCalendar={()=>setScreen('calendar')}/>:career&&screen==='competitions'?!worldReady?<p role="status">Carregando participantes…</p>:<Competitions key={career.id} career={career} onOpenFixture={openCompetitionFixture}/>:career&&screen==='matches'?!worldReady||!catalog?<p role="status">Carregando elencos…</p>:<Matches key={career.id+competitionFixture} fixtureId={competitionFixture||undefined} onCompetitions={()=>setScreen('competitions')} career={career} players={players} contracts={contracts} catalog={catalog} onUpdated={refreshRoster} onRoster={()=>setScreen('roster')}/>:career&&(screen==='academy'||screen==='training')?!worldReady?<p role="status">Carregando jogadores da carreira…</p>:<Academy key={career.id+screen} career={career} players={players} contracts={contracts} view={screen} onUpdated={refreshRoster} onMarket={()=>setScreen('market')}/>:career&&screen==='timeline'?<CareerTimeline key={career.id} career={career} players={players} contracts={contracts}/>:career&&screen==='calendar'?<CareerCalendar key={career.id} career={career} players={players} contracts={contracts} onRoster={()=>setScreen('roster')} advance={advance} busy={advancing} report={calendarReport?.id===career.id?calendarReport.report:undefined} onMatches={()=>{setCompetitionFixture('');setScreen('matches');}} onCompetitions={()=>setScreen('competitions')} onOpenFixture={openCompetitionFixture}/>:career&&screen==='identity'?<><h1>Identidade da organização</h1><EmblemDownload identity={currentIdentity(career)} code={career.code}/><IdentityEditor value={draftIdentity} code={career.code} onChange={setDraftIdentity}/><footer><button disabled={busy} onClick={()=>setScreen('dashboard')}>Cancelar</button><button className="primary" disabled={busy} onClick={commitIdentity}>Salvar identidade</button></footer></>:career&&<CareerDashboard catalog={catalog} onNewsPlayer={openNewsPlayer} onNewsFixture={openCompetitionFixture} career={career} country={countries[career.country]??career.country} players={players} contracts={contracts} emblem={emblem(career)} leagueName={catalog?.leagues.find(league=>league.id===career.entry?.leagueId)?.name} navigate={screen=>{if(screen==='matches')setCompetitionFixture('');if(screen==='players')setNewsPlayer(null);setScreen(screen);}} advance={()=>advance(1)} busy={advancing}/>}</main></div>}
+ {screen!=='menu'&&<footer className="game-version-footer">{gameVersion}</footer>}
  </div>;
 }

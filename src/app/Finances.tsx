@@ -53,9 +53,12 @@ export function Finances({career,players,onUpdated,onCalendar}:{career:Career;pl
        <h3>Propostas disponíveis</h3>{!offers.length&&<p>Nenhuma proposta disponível neste momento. Novas oportunidades são verificadas a cada ciclo de 30 dias.</p>}
        <div className="finance-cards">{offers.map(s=><article key={s.id}><h3>{s.company}</h3><p><strong>{money(s.payment)} por período</strong> · {s.duration} dias</p>
          <p>Reputação mínima {s.min_reputation} · Proposta até {formatCareerDay(s.expires_day)}</p>
-         <button className="primary" disabled={busy||active.length>=2||data.reputation<s.min_reputation} onClick={()=>void perform(async()=>{
-           await onUpdated(await acceptSponsorship(career.id,s.id));
-         },'Patrocínio de '+s.company+' aceito. Os pagamentos seguirão o contrato.')}>Aceitar</button>
+         <button className="primary" disabled={busy||active.length>=2||data.reputation<s.min_reputation} onClick={()=>{
+           if(!window.confirm(`Assinar com ${s.company} por ${s.duration} dias? O contrato ocupa uma vaga de patrocínio.`))return;
+           void perform(async()=>{
+             await onUpdated(await acceptSponsorship(career.id,s.id));
+           },'Patrocínio de '+s.company+' aceito. Os pagamentos seguirão o contrato.');
+         }}>Aceitar</button>
          <button disabled={busy} onClick={()=>void perform(async()=>{await rejectSponsorship(career.id,s.id);},'Proposta recusada.')}>Recusar</button>
        </article>)}</div>
        {!!history.length&&<details><summary>Histórico de propostas e contratos</summary><ul>{history.map(s=><li key={s.id}>{s.company} · {s.state==='accepted'?'Encerrado':s.state==='rejected'?'Recusada':'Expirada'} · {money(s.payment)} por período · {s.duration} dias</li>)}</ul></details>}
@@ -64,9 +67,12 @@ export function Finances({career,players,onUpdated,onCalendar}:{career:Career;pl
        <div className="finance-cards">{(Object.keys(facilityDefinitions) as FacilityKind[]).map(kind=>{
          const definition=facilityDefinitions[kind],level=data.facilities.find(f=>f.kind===kind)?.level??0,cost=definition.costs[level];
          return <article key={kind}><h3>{definition.name}</h3><p><strong>Nível {level}/3</strong></p><p>{definition.description}</p>
-           {level<3?<><p>Próximo nível: {money(cost)}</p><button disabled={busy||data.balance<cost} onClick={()=>void perform(async()=>{
-             await onUpdated(await improveFacility(career.id,kind,level));
-           },definition.name+' melhorado para o nível '+(level+1)+'.')}>Melhorar para nível {level+1}</button>{data.balance<cost&&<p className="muted">Saldo insuficiente.</p>}</>:<p>Nível máximo atingido.</p>}
+           {level<3?<><p>Próximo nível: {money(cost)}</p><button disabled={busy||data.balance<cost} onClick={()=>{
+             if(!window.confirm(`Melhorar ${definition.name} para o nível ${level+1} por ${money(cost)}? O valor será debitado do caixa.`))return;
+             void perform(async()=>{
+               await onUpdated(await improveFacility(career.id,kind,level));
+             },definition.name+' melhorado para o nível '+(level+1)+'.');
+           }}>Melhorar para nível {level+1}</button>{data.balance<cost&&<p className="muted">Saldo insuficiente.</p>}</>:<p>Nível máximo atingido.</p>}
          </article>;
        })}</div>
      </section>

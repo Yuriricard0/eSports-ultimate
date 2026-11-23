@@ -1,4 +1,5 @@
 import {useEffect,useState} from 'react';
+import {useViewPreference} from './view-preferences';
 import type {Career} from '../game-core/career';
 import type {Contract,Player} from '../game-core/recruitment';
 import type {WorldCatalog} from '../game-core/world';
@@ -43,16 +44,25 @@ export function NewsPanel(props:NewsProps){
 }
 
 export function NewsPageView(props:NewsProps){
- const [category,setCategory]=useState(''),[query,setQuery]=useState(''),[page,setPage]=useState(0);
+ const [category,setCategory]=useViewPreference(`${props.career.id}:news:category`,'');
+ const [query,setQuery]=useViewPreference(`${props.career.id}:news:query`,'');
+ const [mode,setMode]=useViewPreference(`${props.career.id}:news:mode`,'');
+ const [organizationId,setOrganizationId]=useViewPreference(`${props.career.id}:news:organization`,'');
+ const [page,setPage]=useState(0);
  const [news,setNews]=useState<NewsPage|null>(null),[error,setError]=useState('');
  useEffect(()=>{
-   let active=true;listCareerNews(props.career.id,{category,query,page,pageSize:20}).then(rows=>{if(active)setNews(rows);}).catch(reason=>{if(active)setError(String(reason));});
+   let active=true;setError('');listCareerNews(props.career.id,{category,query,mode,organizationId,page,pageSize:20}).then(rows=>{if(active)setNews(rows);}).catch(reason=>{if(active)setError(String(reason));});
    return()=>{active=false;};
- },[props.career,category,query,page]);
+ },[props.career,category,query,mode,organizationId,page]);
  return <>
    <h1>Notícias</h1><p className="muted">Acontecimentos registrados na carreira. Os vínculos dos atletas são consultados pelo estado atual.</p>
    <div className="panel player-filters"><input aria-label="Buscar notícias" placeholder="Buscar título ou resumo…" value={query} onChange={e=>{setQuery(e.target.value);setPage(0);}}/>
      <select aria-label="Categoria da notícia" value={category} onChange={e=>{setCategory(e.target.value);setPage(0);}}><option value="">Todas as categorias</option>{newsCategories.map(name=><option key={name} value={name}>{name}</option>)}</select>
+     <select aria-label="Modalidade da notícia" value={mode} onChange={e=>{setMode(e.target.value);setPage(0);}}><option value="">Todas as modalidades</option><option value="MOBA">MOBA</option><option value="FPS">CS2</option></select>
+     <select aria-label="Organização da notícia" value={organizationId} onChange={e=>{setOrganizationId(e.target.value);setPage(0);}}>
+       <option value="">Todas as organizações</option><option value="career">{props.career.name}</option>
+       {[...(props.catalog?.organizations??[])].sort((a,b)=>a.name.localeCompare(b.name,'pt-BR')).map(org=><option key={org.id} value={org.id}>{org.name}</option>)}
+     </select>
    </div>
    {error&&<p role="alert">{error}</p>}{!news&&!error&&<p role="status">Carregando notícias…</p>}
    {news&&<section className="panel"><p className="muted">{news.total} acontecimentos</p>

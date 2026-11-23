@@ -3,6 +3,7 @@ import {getOfflineStatus,prepareOffline} from './offline';
 
 export function GameSettings(){
   const [contrast,setContrast]=useState(localStorage.getItem('uem:contrast')==='high');
+  const [reduceMotion,setReduceMotion]=useState(localStorage.getItem('uem:motion')==='reduced');
   const [message,setMessage]=useState('');
   const [progress,setProgress]=useState(false);
   return <main className="content">
@@ -15,6 +16,12 @@ export function GameSettings(){
         document.documentElement.dataset.contrast=value;
         setContrast(event.target.checked);
       }}/> Alto contraste</label>
+      <label className="compare-choice"><input type="checkbox" checked={reduceMotion} onChange={event=>{
+        const reduced=event.target.checked;
+        localStorage.setItem('uem:motion',reduced?'reduced':'system');
+        document.documentElement.dataset.motion=reduced?'reduced':'system';
+        setReduceMotion(reduced);
+      }}/> Reduzir animações</label>
       {document.fullscreenEnabled&&<button onClick={()=>void (document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen()).catch(()=>setMessage('Tela cheia indisponível.'))}>Alternar tela cheia</button>}
     </section>
     <section className="panel">

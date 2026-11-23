@@ -10,6 +10,7 @@ import type {MatchResult} from '../game-core/matches';
 import type {CompetitionConfig,Season} from '../game-core/competitions';
 import type {CashCategory,FacilityKind} from '../game-core/finance';
 import type {NewsFilter,NewsPage} from '../game-core/news';
+import {trackSave} from '../game-core/save-status';
 let worker:Worker;
 let storageFailure:Error|undefined;
 let sequence=0;
@@ -27,12 +28,18 @@ export async function initialize(){
  }).catch(reject);
  });
 }
-function request<T>(action:string,input?:unknown):Promise<T>{return new Promise((resolve,reject)=>{
+const saveActions=new Set(['delete','create','import','identity','rename','starter','prepare-match','play-match','cancel-match',
+ 'start-season','competition-config','play-competition','sponsor-accept','sponsor-reject','facility-upgrade','assign-academy',
+ 'set-training','submit-offer','confirm-offer','cancel-offer','renew-contract','depart-player','advance']);
+function request<T>(action:string,input?:unknown):Promise<T>{
+ const send=()=>new Promise<T>((resolve,reject)=>{
  if(storageFailure){reject(storageFailure);return;}
  if(!worker){reject(Error('O armazenamento ainda não está pronto.'));return;}
  const id=++sequence;pending.set(id,{resolve,reject});
  try{worker.postMessage({id,action,input});}catch(error){pending.delete(id);reject(error);}
-});}
+ });
+ return saveActions.has(action)?trackSave(send):send();
+}
 export const listCareers=()=>request<Career[]>('list');
 export const listCareerNews=(careerId:string,filter:NewsFilter={})=>request<NewsPage>('news',{careerId,filter});
 export const removeCareer=(id:string)=>request<Career[]>('delete',id);

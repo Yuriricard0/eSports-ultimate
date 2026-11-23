@@ -8,12 +8,23 @@ import {phaseOneSchema} from '../src/game-core/identity.ts';
 import {negotiationSchema} from '../src/game-core/negotiation.ts';
 import {competitionSchema} from '../src/game-core/competition-store.ts';
 import {departPlayer,renewContract} from '../src/game-core/market.ts';
-import {newsSchema,synchronizeNews,listNews,processMoodEvent,recordDevelopmentNews,currentPlayerSituation} from '../src/game-core/news.ts';
+import {newsSchema,synchronizeNews,listNews,recordNews,processMoodEvent,recordDevelopmentNews,currentPlayerSituation} from '../src/game-core/news.ts';
 import {definitions} from '../src/game-core/attributes.ts';
 
 const player:Player={id:7,nickname:'Nyx',name:'Nyx Silva',mode:'MOBA',role:'top',overall:50,organization:null,team:null,country:'BR',birthDay:-6900,portraitIndex:0,estimateLow:70,estimateHigh:80,ceiling:80,attributes:Object.fromEntries(definitions.MOBA.map(key=>['moba_'+key,50]))};
 const career:Career={id:'a',name:'Aurora',code:'AUR',country:'BR',mode:'MOBA',difficulty:'Normal',balance:100000000,color:'#ef123b',symbol:'animals_wolf',created:'2026',day:1};
 const catalog={organizations:[],teams:[],leagues:[]};
+test('filtros combinam modalidade, organização e assunto antes da paginação',()=>{
+ const {db,run,read,all}=setup();
+ try{
+   recordNews(run,read,'a',{id:'fps',day:2,category:'Mercado',title:'Contratação CS2',summary:'Contrato',playerId:8,organizationId:'rival'});
+   recordNews(run,read,'a',{id:'moba',day:3,category:'Mercado',title:'Contratação MOBA',summary:'Contrato',playerId:7,organizationId:'rival'});
+   recordNews(run,read,'a',{id:'n',day:4,category:'Organizações',title:'Instalações',summary:'Melhoria',organizationId:'career'});
+   const players=[player,{id:8,mode:'FPS' as const}];
+   assert.deepEqual(listNews(read,all,'a',{mode:'FPS',organizationId:'rival',category:'Mercado',pageSize:1},players).items.map(item=>item.id),['fps']);
+   assert.equal(listNews(read,all,'a',{mode:'MOBA',organizationId:'career'},players).total,1);
+ }finally{db.close();}
+});
 function setup(){
  const db=new DatabaseSync(':memory:');db.exec(schema+contractSchema);migrateCalendar(sql=>db.exec(sql),1);db.exec(phaseOneSchema+negotiationSchema+competitionSchema+newsSchema);
  db.prepare('INSERT INTO careers VALUES(?,?,?,?,?,?,?,?,?,?,?)').run('a','Aurora','AUR','BR','MOBA','Normal',100000000,'#ef123b','animals_wolf','2026',1);

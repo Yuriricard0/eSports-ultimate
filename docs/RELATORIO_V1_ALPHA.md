@@ -61,6 +61,8 @@ Nenhum save pessoal foi apagado ou alterado. O projeto Godot original foi apenas
 
 ## Pendências e riscos conhecidos
 
+Em 23/11/2026, a simulação automatizada foi estendida para seis temporadas completas por modalidade. MOBA chegou ao dia 1907 com 42 séries oficiais do usuário, e CS2 chegou ao dia 2033 com 24. Os dois testes reabriram o banco após cada temporada, conferiram calendário e finanças, renovaram contratos e restauraram seis temporadas a partir de um backup. A suíte completa passou com 92 de 92 testes em 164,57 segundos. Uma nova tentativa de abrir a build no navegador integrado recebeu a mesma recusa de acesso ao endereço local.
+
 - **Não executados:** Chrome, Edge e Firefox; inspeção visual em 1366×768 e 1920×1080; cliques completos, console e recarga de página na produção; OPFS e atualização offline no navegador real.
 - Motivo: uma permissão salva/gerenciada recusou o acesso ao endereço local no navegador integrado. Não foi usada outra superfície ou porta para contornar a restrição.
 - Integridade dos arquivos do build foi testada em disco. Não equivale a confirmar que o bundle inicia e percorre uma carreira em um navegador real.

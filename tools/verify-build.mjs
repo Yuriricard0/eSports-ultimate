@@ -16,9 +16,8 @@ function check(url){
 }
 for(const asset of assets)bytes+=check(asset);
 const html=read('index.html');
-assert.ok(html.includes('V1 Alpha'),'Identificação Alpha ausente do HTML.');
 const version=JSON.parse(readFileSync(resolve('package.json'),'utf8')).version;
-assert.ok(version.includes('alpha'),'Versão do pacote não é Alpha.');
+assert.ok(html.includes('v'+version),'Versão do pacote ausente do título HTML.');
 assert.ok(assets.filter(path=>/\/index-.*\.js$/.test(path)).some(path=>read(path.slice(1)).includes(version)),'Versão exibida difere do pacote.');
 for(const [,url] of html.matchAll(/(?:src|href)="(\/[^\"]+)"/g))check(url);
 for(const css of assets.filter(path=>path.endsWith('.css'))){

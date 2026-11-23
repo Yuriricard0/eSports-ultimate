@@ -14,7 +14,7 @@ type All=(sql:string,bind:Bind)=>Row[];
 export const newsCategories=['Mercado','Campeonatos','Organizações','Jogadores'] as const;
 export type NewsCategory=typeof newsCategories[number];
 export type NewsItem={id:string;day:number;category:NewsCategory;title:string;summary:string;playerId?:number;organizationId?:string;fixtureId?:string;target?:'finances'};
-export type NewsFilter={category?:string;query?:string;page?:number;pageSize?:number};
+export type NewsFilter={category?:string;query?:string;mode?:string;organizationId?:string;page?:number;pageSize?:number};
 export type NewsPage={items:NewsItem[];total:number};
 export const newsSchema=`
 CREATE TABLE IF NOT EXISTS web_news (
@@ -37,12 +37,20 @@ export function recordNews(run:Run,read:Read,careerId:string,item:NewsItem){
  const sequence=Number(read('SELECT COALESCE(MAX(sequence),0)+1 next FROM web_news WHERE career_id=?',[careerId])?.next??1);
  run('INSERT INTO web_news VALUES(?,?,?,?,?,?)',[careerId,item.id,item.day,item.category,sequence,JSON.stringify(item)]);return true;
 }
-export function listNews(read:Read,all:All,careerId:string,filter:NewsFilter):NewsPage{
+export function listNews(read:Read,all:All,careerId:string,filter:NewsFilter,players:Pick<Player,'id'|'mode'>[]=[]):NewsPage{
  const page=filter.page??0,pageSize=filter.pageSize??20;
  if(!Number.isInteger(page)||page<0||page>100000||!Number.isInteger(pageSize)||pageSize<1||pageSize>50||
-   (filter.category&&!newsCategories.includes(filter.category as NewsCategory)))throw Error('Filtro de notícias inválido.');
+   (filter.category&&!newsCategories.includes(filter.category as NewsCategory))||
+   (filter.mode&&filter.mode!=='MOBA'&&filter.mode!=='FPS'))throw Error('Filtro de notícias inválido.');
  const bind:Bind=[careerId],where=['career_id=?'];
  if(filter.category){where.push('category=?');bind.push(filter.category);}
+ if(filter.organizationId){where.push("json_extract(data,'$.organizationId')=?");bind.push(filter.organizationId);}
+ if(filter.mode){
+   // Player stories can include the other game. Stories without a known athlete follow the career's discipline.
+   const playerModes=JSON.stringify(Object.fromEntries(players.map(player=>[player.id,player.mode])));
+   where.push("COALESCE(json_extract(?, '$.' || json_extract(data,'$.playerId')), (SELECT mode FROM careers WHERE id=?))=?");
+   bind.push(playerModes,careerId,filter.mode);
+ }
  if(filter.query?.trim()){
    where.push("instr(lower(json_extract(data,'$.title')||' '||json_extract(data,'$.summary')),?)>0");bind.push(filter.query.trim().toLowerCase());
  }

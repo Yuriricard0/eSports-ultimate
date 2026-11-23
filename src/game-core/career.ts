@@ -3,11 +3,15 @@ import {symbols} from './symbols.ts';
 import type {Identity} from './identity.ts';
 import type {CareerEntry} from './entry.ts';
 export const budgets:Record<string,number>={'Fácil':50000000,'Normal':25000000,'Difícil':12500000,'Realista':7500000};
-export type Career={id:string;name:string;code:string;country:string;mode:string;difficulty:string;balance:number;color:string;symbol:string;created:string;day:number;identity?:Identity;hasGodotSource?:boolean;saveName?:string;entry?:CareerEntry;reputation?:number};
+export type Career={id:string;name:string;code:string;country:string;mode:string;difficulty:string;balance:number;color:string;symbol:string;created:string;day:number;identity?:Identity;hasGodotSource?:boolean;saveName?:string;entry?:CareerEntry;reputation?:number;createdVersion?:string|null};
 export function validateSaveName(value:unknown){
  if(typeof value!=='string'||value.trim().length>60)throw Error('O nome do save deve ter até 60 caracteres.');
  return value.trim();
 }
+export const saveVersionSchema=`CREATE TABLE IF NOT EXISTS web_save_versions(
+ career_id TEXT PRIMARY KEY REFERENCES careers(id) ON DELETE CASCADE,
+ created_version TEXT NOT NULL CHECK(length(created_version) BETWEEN 1 AND 32)
+);`;
 export function careerInput(input:Record<string,unknown>){
  const name=String(input.name??'').trim(),code=String(input.code??'').trim().toUpperCase();
  if(!name||name.length>60||!/^[A-Z]{1,3}$/.test(code)||!['MOBA','FPS'].includes(String(input.mode))||!Object.hasOwn(budgets,String(input.difficulty))||!Object.hasOwn(countries,String(input.country))||!/^#[0-9a-f]{6}$/i.test(String(input.color))||!Object.hasOwn(symbols,String(input.symbol)))throw new Error('Confira nome, sigla, país, modalidade e identidade.');

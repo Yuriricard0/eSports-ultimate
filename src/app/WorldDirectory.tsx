@@ -5,6 +5,7 @@ import type {Career} from '../game-core/career';
 import {PlayerPortrait} from './PlayerPortrait';
 import {roleNames} from './Players';
 import {clubPhilosophy,estimatedStrength} from '../game-core/team-analysis';
+import {useViewPreference} from './view-preferences';
 
 const displayCountries=new Intl.DisplayNames(['pt-BR'],{type:'region'});
 const countryName=(code:string)=>code==='ZZ'?'País não informado':displayCountries.of(code)??code;
@@ -20,7 +21,7 @@ export function WorldDirectory({catalog,players,view,onNavigate,career}:{
   catalog:WorldCatalog;players:Player[];view:'organizations'|'leagues';onNavigate:(view:string)=>void;
   career?:Career|null;
 }) {
-  const [filter,setFilter]=useState(defaults);
+  const [filter,setFilter]=useViewPreference(`${career?.id??'guest'}:${view}:filters`,defaults);
   const [page,setPage]=useState(0);
   const [clubId,setClubId]=useState('');
   const [teamId,setTeamId]=useState('');
@@ -39,7 +40,7 @@ export function WorldDirectory({catalog,players,view,onNavigate,career}:{
   const leagues=catalog.leagues.filter(league=>!filter.mode||filter.mode===league.discipline);
   const matches=filterOrganizations(catalog,filter);
   const activePage=Math.min(page,Math.max(0,Math.ceil(matches.length/pageSize)-1));
-  const update=(next:Partial<WorldFilter>)=>{setFilter(current=>({...current,...next}));setPage(0);};
+  const update=(next:Partial<WorldFilter>)=>{setFilter({...filter,...next});setPage(0);};
   const openClub=(id:string)=>{
     setClubId(id);
     setTeamId(catalog.teams.find(team=>team.organization===id&&team.league===filter.league)?.id??'');

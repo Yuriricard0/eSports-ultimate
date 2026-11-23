@@ -18,6 +18,7 @@ export function MarketNegotiations({career,players,draft,onClearDraft,onFinish}:
   const [negotiations,setNegotiations]=useState<Negotiation[]>([]);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
+  const [notice,setNotice]=useState('');
   const [showHistory,setShowHistory]=useState(false);
   const [moves,setMoves]=useState<MarketMove[]>([]);
   useEffect(()=>{
@@ -29,21 +30,23 @@ export function MarketNegotiations({career,players,draft,onClearDraft,onFinish}:
   const nicknames=new Map(players.map(player=>[player.id,player.nickname]));
   const open=(row:Negotiation)=>row.state==='accepted'||row.state==='counter';
   const rows=showHistory?negotiations:negotiations.filter(open);
-  const run=async(action:()=>Promise<unknown>)=>{
+  const run=async(action:()=>Promise<unknown>,message:string)=>{
     setBusy(true);
     setError('');
-    try{await action();setNegotiations(await listNegotiations(career.id));}
+    setNotice('');
+    try{await action();setNegotiations(await listNegotiations(career.id));setNotice(message);}
     catch(reason){setError(reason instanceof Error?reason.message:String(reason));}
     finally{setBusy(false);}
   };
   return <>
     {error&&<p role="alert">{error}</p>}
+    {notice&&<p role="status">{notice}</p>}
     {draft&&<OfferForm key={draft.id} player={draft} busy={busy} balance={career.balance}
       cancel={onClearDraft} submit={offer=>run(async()=>{
         await sendOffer(career.id,draft.id,offer);
         setShowHistory(true);
         onClearDraft();
-      })}/>}
+      },'Proposta registrada. Confira a resposta nas negociações.')}/>}
     <section className="panel">
       <div className="players-heading"><h2>Negociações</h2>
         <button onClick={()=>setShowHistory(!showHistory)}>{showHistory?'Só abertas':'Ver histórico'}</button></div>
@@ -59,10 +62,10 @@ export function MarketNegotiations({career,players,draft,onClearDraft,onFinish}:
           <p>Custo nominal do vínculo {money(bonus+(row.transfer_fee??0)+Math.round(salary*row.days/30))}</p>
           {open(row)&&<>
             <p>Válida até {formatCareerDay(row.expires_day)}</p>
-            <button className="primary" disabled={busy||career.day>row.expires_day} onClick={()=>void run(()=>onFinish(row.id))}>
+            <button className="primary" disabled={busy||career.day>row.expires_day} onClick={()=>void run(()=>onFinish(row.id),'Contrato assinado. O atleta já está no elenco.')}>
               {row.state==='counter'?'Aceitar contraproposta e assinar':'Assinar contrato'}
             </button>
-            <button disabled={busy} onClick={()=>void run(()=>cancelOffer(career.id,row.id))}>Cancelar negociação</button>
+            <button disabled={busy} onClick={()=>void run(()=>cancelOffer(career.id,row.id),'Negociação cancelada.')}>Cancelar negociação</button>
           </>}
         </article>;
       })}</div>

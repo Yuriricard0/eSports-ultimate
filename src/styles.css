@@ -133,3 +133,21 @@ html[data-contrast=high]{--muted:#c8d1e4}html[data-contrast=high] button:not(:di
 .finance-metrics{margin:16px 0}.finance-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:12px 0}.finance-cards article{border:1px solid #494555;background:#141520;border-radius:8px;padding:15px}.finance-cards article button{margin:4px 8px 0 0}.cash-in{color:#83d8a8}.cash-out{color:#ff879d}
 .news-story{display:flex;gap:14px;padding:16px 0;border-top:1px solid #494555}.news-story>div:last-child{flex:1;min-width:0}.news-story h3{font-size:18px;margin:7px 0}.news-story p{margin:7px 0}.news-icon{width:60px;flex:0 0 60px;text-align:center}.news-icon .club-emblem{width:56px}.news-icon .club-emblem strong{font-size:9px}.news-icon>img{width:56px;height:62px;object-fit:contain}.news-monogram{display:block;padding:12px 4px;border:1px solid var(--accent);font-weight:bold}.news-actions{display:flex;gap:8px;flex-wrap:wrap}.news-actions button{padding:6px 9px}.compact-news{gap:10px;padding:12px 0}.compact-news h3{font-size:15px}.compact-news p{font-size:13px}.compact-news .news-icon{width:42px;flex-basis:42px}.compact-news .club-emblem{width:40px}.compact-news .news-icon>img{width:38px;height:44px}
 @media(max-width:850px){.match-lineups,.match-statistics{grid-template-columns:1fr}.match-team-badge .club-emblem{width:75px}.match-team-badge>img{width:75px;height:75px}.match-scoreboard{gap:8px}}
+
+.save-status,.career-version{position:fixed;right:16px;z-index:6;font-size:12px;color:var(--muted);background:#12151f;border-radius:6px;padding:5px 9px;pointer-events:none}
+.save-status{bottom:16px}.career-version{bottom:44px}
+
+.career-dashboard abbr[title]{cursor:help;text-decoration:underline dotted;text-underline-offset:3px}
+.career-dashboard details summary{cursor:pointer}
+.career-dashboard .starter-grid+details,.career-decisions{margin-top:12px}
+.career-decisions button{margin:8px 8px 0 0}
+
+.career-anniversary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 20px;background:#23172a;color:#f4def3}
+.career-anniversary button{padding:4px 10px}
+
+.game-version-footer{justify-content:flex-end;padding:8px 20px;margin-top:0;color:var(--muted);font-size:12px}
+.emblem-download-source{position:fixed;left:-10000px;top:0;pointer-events:none}
+.emblem-download-source .club-emblem{width:190px}
+.emblem-download-source .club-emblem strong{font-size:20px}
+:root[data-motion="reduced"] *, :root[data-motion="reduced"] *::before, :root[data-motion="reduced"] *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+@media (prefers-reduced-motion:reduce){*, *::before, *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}

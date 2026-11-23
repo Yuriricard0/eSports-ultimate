@@ -93,16 +93,3 @@ function CompetitionSettings({initial,busy,save}:{initial:CompetitionConfig;busy
    </div><button disabled={busy}>Salvar para próximas edições</button>
  </form>;
 }
-
-export function CompetitionAgenda({career,onOpenFixture,onCompetitions}:{career:Career;onOpenFixture:(id:string)=>void;onCompetitions:()=>void}){
- const [state,setState]=useState<CompetitionState|null>(null),[error,setError]=useState('');
- useEffect(()=>{let active=true;listCompetitions(career.id).then(data=>{if(active)setState(data);}).catch(reason=>{if(active)setError(String(reason));});return()=>{active=false;};},[career]);
- const games=state?.seasons[0]?.editions.flatMap(edition=>edition.fixtures.filter(g=>!g.result&&(g.home==='career'||g.away==='career')).map(game=>({game,edition})))
-   .sort((a,b)=>a.game.day-b.game.day).slice(0,8)??[];
- return <section className="panel"><div className="players-heading"><h2>Agenda de competições</h2><button onClick={onCompetitions}>Ver competições →</button></div>
-   {error&&<p role="alert">{error}</p>}{!games.length&&<p>Nenhum confronto pendente da organização.</p>}
-   {games.map(({game,edition})=><p key={game.id}>{formatCareerDay(game.day)} · {edition.name} · {edition.participants.find(p=>p.id===(game.home==='career'?game.away:game.home))?.name} · MD{game.bestOf}{' '}
-     <button onClick={()=>onOpenFixture(game.id)}>{game.day<=career.day?'Disputar confronto →':'Abrir confronto →'}</button>
-   </p>)}
- </section>;
-}

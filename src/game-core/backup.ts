@@ -16,6 +16,7 @@ const tables={
   web_identity:['career_id','config'],
   web_godot_source:['career_id','file'],
   web_save_names:['career_id','name'],
+  web_save_versions:['career_id','created_version'],
   web_career_entry:['career_id','league_id','kind','displaced_team_id'],
   web_career_world:['career_id','seed','version','players'],
   web_lineup_history:['career_id','day','player_id'],
