@@ -1,6 +1,7 @@
 import {overall,roles,type Mode} from './attributes.ts';
 import {playerCondition,reactToResult,teamChemistry} from './development.ts';
-import {perkEffects} from './traits.ts';
+import {perkById,perkEffects} from './traits.ts';
+import type {PerkInfluence} from './player-identity.ts';
 import type {Contract,Player} from './recruitment.ts';
 import type {Identity} from './identity.ts';
 
@@ -40,7 +41,7 @@ function validateSide(side:MatchSide,mode:Mode){
  }
 }
 
-function athleteStrength(slot:MatchStarter,mode:Mode,day:number){
+function athleteStrength(slot:Pick<MatchStarter,'player'|'role'>,mode:Mode,day:number){
  const p=slot.player,condition=playerCondition(p,day);
  const effects=perkEffects(p.perks??[],{planning:true,challenge:true,pressure:true,confidence:condition.morale,happiness:condition.morale},p.personality);
  const ability=(p.overall*.75+overall(p.attributes,mode,slot.role)*.25)*(p.role===slot.role?1:.94);
@@ -131,11 +132,32 @@ export function simulateMatch(mode:Mode,day:number,teams:[MatchSide,MatchSide],s
    strengths,homeWinProbability:probability,events,stats,mvp};
 }
 
-export function applyMatchConditions(players:Player[],result:MatchResult):Player[]{
+export function applyMatchConditions(players:Player[],result:MatchResult,recordInfluences=true):Player[]{
  const played=new Map(result.stats.map(stat=>[stat.playerId,stat]));
  return players.map(player=>{
    const stat=played.get(player.id);if(!stat)return player;
-   const condition=reactToResult(playerCondition(player,result.day),stat.team===result.winner?'win':'loss',Math.min(12,result.durationMinutes/5),player.perks,player.personality);
-   return {...player,condition:{...condition,day:result.day}};
+   const before=playerCondition(player,result.day),outcome=stat.team===result.winner?'win':'loss';
+   const load=Math.min(12,result.durationMinutes/5),perks=player.perks??[];
+   const condition=reactToResult(before,outcome,load,perks,player.personality);
+   const updated={...player,condition:{...condition,day:result.day}};
+   if(!recordInfluences||!perks.length)return updated;
+   const effects:PerkInfluence[]=[];
+   let strength:number|undefined;
+   for(const [index,perk] of perks.entries()){
+     const metric=perkById.get(perk.id)?.metric;
+     if(metric==='execution'||metric==='decision'||metric==='coordination'){
+       const otherPerks=perks.filter((_,i)=>i!==index);
+       strength??=athleteStrength({player,role:stat.role},result.mode,result.day);
+       const delta=round(strength-athleteStrength({player:{...player,perks:otherPerks},role:stat.role},result.mode,result.day));
+       if(delta)effects.push({day:result.day,perkId:perk.id,metric:'strength',delta,result:outcome});
+     }
+     if(metric!=='morale_recovery'&&metric!=='fatigue_cost'&&perk.id!=='perfectionist')continue;
+     const without=reactToResult(before,outcome,load,perks.filter((_,i)=>i!==index),player.personality);
+     for(const field of ['morale','fatigue'] as const){
+       const delta=round(condition[field]-without[field]);
+       if(delta)effects.push({day:result.day,perkId:perk.id,metric:field,delta,result:outcome});
+     }
+   }
+   return effects.length?{...updated,perkInfluences:[...(player.perkInfluences??[]),...effects].slice(-8)}:updated;
  });
 }

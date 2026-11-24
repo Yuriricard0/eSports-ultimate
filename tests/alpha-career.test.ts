@@ -10,6 +10,7 @@ import {roles,type Mode} from '../src/game-core/attributes.ts';
 import {athleteAge} from '../src/game-core/development.ts';
 import {nextUserFixture,type Season} from '../src/game-core/competitions.ts';
 import type {Career} from '../src/game-core/career.ts';
+import {careerCreationVersion} from '../src/version.ts';
 import type {WorldCatalog} from '../src/game-core/world.ts';
 
 const catalog=JSON.parse(readFileSync('public/data/real_teams_2026.json','utf8')) as WorldCatalog;
@@ -24,7 +25,7 @@ for(const mode of ['MOBA','FPS'] as Mode[])test(`Alpha ${mode}: joga ${seasonCou
  let request=harness();
  try{
    let career=await request('create',{name:'Alpha '+mode,code:mode==='MOBA'?'ALM':'ALF',country:'BR',mode,difficulty:'Fácil',color:'#ef123b',symbol:'animals_wolf'}) as Career;
-   assert.equal(career.createdVersion,'1.1.0');
+   assert.equal(career.createdVersion,careerCreationVersion);
    const id=career.id;let players=await request('world-players',id) as Player[];
    assert.equal(new Set(players.map(p=>p.id)).size,players.length);assert.ok(players.length>base.length);
    const sign=async(player:Player)=>{

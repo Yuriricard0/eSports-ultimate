@@ -2,6 +2,7 @@ import {defaultIdentity,validateIdentity,type Identity} from './identity.ts';
 import {validateSaveName} from './career.ts';
 import {overall,roles,type Mode} from './attributes.ts';
 import type {Player} from './recruitment.ts';
+import {favoriteIds,favoriteName} from './lineup-favorites.ts';
 
 export const maxBackupBytes=128*1024*1024;
 type Value=string|number|Uint8Array|null;
@@ -20,6 +21,7 @@ const tables={
   web_career_entry:['career_id','league_id','kind','displaced_team_id'],
   web_career_world:['career_id','seed','version','players'],
   web_lineup_history:['career_id','day','player_id'],
+  web_lineup_favorites:['career_id','id','name','players'],
   web_negotiations:['id','career_id','player_id','opened_day','expires_day','state','bonus','salary','days','counter_bonus','counter_salary','reason'],
   web_transfer_quotes:['career_id','negotiation_id','organization','team','fee'],
   web_contract_closures:['career_id','player_id','start_day','day','reason'],
@@ -132,6 +134,10 @@ export function restoreWebBackup(read:Select,run:Execute,newId:()=>string){
         ))throw Error('O backup contém dados de carreira inválidos.');
         if(table==='web_identity')row.config=JSON.stringify(validateIdentity(JSON.parse(String(row.config))));
         if(table==='web_save_names')row.name=validateSaveName(row.name);
+        if(table==='web_lineup_favorites'){
+          row.name=favoriteName(row.name);
+          row.players=JSON.stringify(favoriteIds(JSON.parse(String(row.players))));
+        }
         if(table==='web_transfer_quotes')row.negotiation_id=id+':'+String(row.negotiation_id);
         if(table==='web_matches')row.id=id+':'+String(row.id);
         run('INSERT INTO '+table+'('+columns.join(',')+') VALUES('+columns.map(()=>'?').join(',')+')',

@@ -151,3 +151,9 @@ html[data-contrast=high]{--muted:#c8d1e4}html[data-contrast=high] button:not(:di
 .emblem-download-source .club-emblem strong{font-size:20px}
 :root[data-motion="reduced"] *, :root[data-motion="reduced"] *::before, :root[data-motion="reduced"] *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
 @media (prefers-reduced-motion:reduce){*, *::before, *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+.player-analysis{margin:18px 0}.player-analysis details{margin:10px 0}.player-analysis summary{cursor:pointer}.player-analysis details label{margin-top:12px;max-width:280px}.player-analysis .player-table{overflow-x:auto}.player-analysis th[scope="row"]{text-align:left}
+
+.chemistry-map{display:block;width:min(100%,360px);height:auto}.roster-tools details+details{margin-top:12px}.roster-tools summary{cursor:pointer}.roster-tools .player-table{overflow-x:auto}.roster-tools label{max-width:300px;margin:12px 0}.roster-tools li{margin-bottom:8px}
+
+.player-profile-dialog{width:min(580px,calc(100vw - 28px));max-height:calc(100dvh - 28px);overflow:auto;background:#12151f;color:inherit;border:1px solid #343a49;border-radius:12px;padding:22px}.player-profile-dialog.full-profile{width:min(820px,calc(100vw - 28px))}.player-profile-dialog::backdrop{background:#090a12c9}.player-profile-dialog .profile-heading{flex-wrap:wrap}.player-profile-dialog summary{cursor:pointer}.full-player-data>details{margin:12px 0}.player-markers{display:flex;flex-wrap:wrap;gap:8px}.player-markers details{padding:4px 9px;border:1px solid #673147;border-radius:8px;color:#f4bed0}.player-markers p{max-width:280px;margin:6px 0}.player-profile-dialog .career-timeline{margin-top:12px}

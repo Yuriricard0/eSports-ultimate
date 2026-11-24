@@ -144,7 +144,7 @@ export function simulateSeries(teams:[MatchSide,MatchSide],mode:Mode,day:number,
  let current=teams;const score:[number,number]=[0,0],maps:MatchResult[]=[];
  while(Math.max(...score)<Math.ceil(bestOf/2)){
    const result=simulateMatch(mode,day,current,hashSeed(seed+':'+maps.length));maps.push(result);score[result.winner]++;
-   const updated=new Map(applyMatchConditions(current.flatMap(team=>team.lineup.map(s=>s.player)),result).map(player=>[player.id,player]));
+   const updated=new Map(applyMatchConditions(current.flatMap(team=>team.lineup.map(s=>s.player)),result,false).map(player=>[player.id,player]));
    current=current.map(team=>({...team,lineup:team.lineup.map(slot=>({...slot,player:updated.get(slot.player.id)!}))})) as [MatchSide,MatchSide];
  }
  return {winner:teams[score[0]>score[1]?0:1].id,score,maps,completedDay:day};

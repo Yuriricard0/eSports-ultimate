@@ -3,11 +3,14 @@ import {RosterContracts} from './RosterContracts';
 import {transferValue} from '../game-core/market';
 import {useState} from 'react';
 import {PlayerPortrait} from './PlayerPortrait';
-import {perkById,personalityNames,prospect} from '../game-core/traits';
-import {playerCondition,athleteAge} from '../game-core/development';
+import {PlayerProfilePanel} from './PlayerProfilePanel';
+import {attributeLabels,roleNames} from './player-labels';
+import {personalObjectiveNames} from '../game-core/player-identity';
+import {recentTrend} from '../game-core/player-analysis';
+import {RosterTools} from './RosterTools';
+import {athleteAge} from '../game-core/development';
 import {formatCareerDay} from '../game-core/calendar';
 import {rankedCountries,rankedStats} from '../game-core/ranked';
-import {styleOf} from '../game-core/team-analysis';
 import type {Career} from '../game-core/career';
 import {type Contract,type Player} from '../game-core/recruitment';
 import {currentPlayerSituation} from '../game-core/news';
@@ -18,10 +21,7 @@ const regions=new Intl.DisplayNames(['pt-BR'],{type:'region'});
 function playerAge(player:Player,day:number){
   return athleteAge(player.birthDay,day);
 }
-export const roleNames: Record<string,string> = {
-  top:'Top',jungle:'Jungle',mid:'Mid',adc:'ADC',support_moba:'Support',
-  entry:'Entry Fragger',support_fps:'Support',awper:'AWPer',igl:'IGL',lurker:'Lurker',
-};
+export {roleNames} from './player-labels';
 
 export function Players({career,players,contracts,organizations,view,onFinish,onStarter,onUpdated,initialPlayerId}:{
   career:Career;
@@ -46,6 +46,7 @@ export function Players({career,players,contracts,organizations,view,onFinish,on
   const [country,setCountry]=useViewPreference(scope+'country','');
   const [role,setRole]=useViewPreference(scope+'role','');
   const [rankedOnly,setRankedOnly]=useViewPreference(scope+'rankedOnly',false);
+  const [rising,setRising]=useViewPreference(scope+'rising',false);
   const [sort,setSort]=useViewPreference(scope+'sort',rankedView?'points':'overall');
   const [ascending,setAscending]=useViewPreference(scope+'ascending',false);
   const [profileId,setProfileId]=useState<number|null>(initialPlayerId??null);
@@ -63,6 +64,8 @@ export function Players({career,players,contracts,organizations,view,onFinish,on
       default:return player.overall;
     }
   };
+  const gains=new Map<number,number>();
+  const risingView=rankedView&&rising;
   const filtered=players.filter(player=>{
     if(view==='roster' && player.mode!==career.mode) return false;
     if((view==='players'||rankedView||view==='market') && mode && player.mode!==mode) return false;
@@ -72,8 +75,14 @@ export function Players({career,players,contracts,organizations,view,onFinish,on
     if(view==='roster' && (!byPlayer.has(player.id)||byPlayer.get(player.id)?.academy)) return false;
     if(view==='market' && (byPlayer.has(player.id) || player.status || (availability==='free'&&player.organization) || (availability==='club'&&!player.organization))) return false;
     const organization=player.organization ? organizations[player.organization] : '';
-    return [player.nickname,player.name,roleNames[player.role],organization].join(' ').toLowerCase().includes(search.trim().toLowerCase());
-  }).sort((a,b)=>(ascending?1:-1)*(sortValue(a)-sortValue(b))||a.id-b.id);
+    if(![player.nickname,player.name,roleNames[player.role],organization].join(' ').toLowerCase().includes(search.trim().toLowerCase()))return false;
+    if(!risingView)return true;
+    const trend=recentTrend(player.developmentHistory,player.overall,career.day);
+    if(!trend||trend.change<0.5)return false;
+    gains.set(player.id,trend.change);
+    return true;
+  }).sort((a,b)=>risingView?gains.get(b.id)!-gains.get(a.id)!||b.overall-a.overall||b.birthDay-a.birthDay||a.id-b.id:
+    (ascending?1:-1)*(sortValue(a)-sortValue(b))||a.id-b.id);
   const rankById=new Map<number,number>();
   if(rankedView){
     const leaders=players.filter(player=>player.status==='ranked'&&player.mode===mode&&(!country||player.country===country))
@@ -82,7 +91,6 @@ export function Players({career,players,contracts,organizations,view,onFinish,on
   }
   const pageSize=8;
   const activePage=Math.min(page,Math.max(0,Math.ceil(filtered.length/pageSize)-1));
-  const condition=profile&&playerCondition(profile,career.day);
   return <>
     <div className="players-heading">
       <h1>{rankedView?'Ranked mundial':view==='roster'?'Elenco':view==='market'?'Mercado de transferências':'Jogadores'}</h1>
@@ -92,6 +100,7 @@ export function Players({career,players,contracts,organizations,view,onFinish,on
     </div>
     {view==='market'&&<p className="muted">Agentes livres e atletas de outros clubes · caixa disponível {money(career.balance)} · Sua modalidade: {career.mode}</p>}
     {rankedView&&<p className="muted">Pontos e taxa de vitória simulados nesta carreira.</p>}
+    {view==='roster'&&<RosterTools career={career} players={players} contracts={contracts} roleNames={roleNames} attributeLabels={attributeLabels} onUpdated={onUpdated}/>}
     <div className="panel player-filters">
       <input aria-label="Buscar jogador" placeholder="Buscar nome, nickname ou organização…" value={search} onChange={event=>{setSearch(event.target.value);setPage(0);}}/>
       {(view==='players'||rankedView||view==='market')&&<select aria-label="Modalidade" value={mode} onChange={event=>{setMode(event.target.value);setRole('');setPage(0);}}>
@@ -109,36 +118,16 @@ export function Players({career,players,contracts,organizations,view,onFinish,on
       </select>
       {view==='players'&&<label className="compare-choice"><input type="checkbox" checked={rankedOnly}
         onChange={event=>{setRankedOnly(event.target.checked);setPage(0);}}/> Apenas jovens da ranked</label>}
-      <select aria-label="Ordenar jogadores" value={sort} onChange={event=>{setSort(event.target.value);setPage(0);}}>
+      {rankedView&&<label className="compare-choice"><input type="checkbox" aria-label="Em ascensão" checked={rising} onChange={event=>{setRising(event.target.checked);setPage(0);}}/> Em ascensão</label>}
+      {!risingView&&<><select aria-label="Ordenar jogadores" value={sort} onChange={event=>{setSort(event.target.value);setPage(0);}}>
         {rankedView&&<option value="points">Pontos da ranked</option>}
         <option value="overall">Overall</option><option value="age">Idade</option>
         {view==='roster'&&<option value="salary">Salário</option>}
         {view==='market'&&<option value="value">Valor estimado</option>}
       </select>
-      <button onClick={()=>{setAscending(!ascending);setPage(0);}}>{ascending?'Menor primeiro ↑':'Maior primeiro ↓'}</button>
+      <button onClick={()=>{setAscending(!ascending);setPage(0);}}>{ascending?'Menor primeiro ↑':'Maior primeiro ↓'}</button></>}
     </div>
-    {profile&&<section className="panel profile-panel" aria-label="Perfil do jogador">
-      <div className="profile-heading"><PlayerPortrait index={profile.portraitIndex}/><div><h2>{profile.nickname}</h2><p>{profile.name} · {roleNames[profile.role]} · {regions.of(profile.country)}</p></div><button onClick={()=>setProfile(null)}>Fechar perfil</button></div>
-      <p>Organização/situação atual: {currentPlayerSituation(profile,contracts,organizations,career.name)}</p>
-      <p>Overall {Math.round(profile.overall)} · Potencial estimado {profile.estimateLow??'—'}–{profile.estimateHigh??'—'}</p>
-      <p>{prospect(playerAge(profile,career.day),profile.estimateLow,profile.estimateHigh,profile.overall)}
-        {profile.personality?' · '+personalityNames[profile.personality]:''}</p>
-      <p>Estilo de jogo · {styleOf(profile)}</p>
-      {condition&&<p>Moral {Math.round(condition.morale)} · Forma {Math.round(condition.form)} · Fadiga {Math.round(condition.fatigue)}</p>}
-      {!!profile.developmentHistory?.length&&<><h3>Evolução do Overall</h3>
-        <ul>{profile.developmentHistory.slice(-6).reverse().map(point=><li key={point.day}>{formatCareerDay(point.day)} · {point.overall.toLocaleString('pt-BR')}</li>)}</ul>
-      </>}
-      <h3>Traços conhecidos</h3>
-      {profile.perks?.length?<ul>{profile.perks.map(instance=>{
-        const perk=perkById.get(instance.id);
-        return perk?<li key={perk.id}><strong>{perk.name}</strong> · {perk.description}</li>:null;
-      })}</ul>:<p className="muted">Nenhum traço conhecido.</p>}
-      {!!profile.perkHistory?.length&&<><h3>Histórico de traços</h3><ul>{profile.perkHistory.map(entry=><li key={entry.day+entry.id}>
-        {formatCareerDay(entry.day)} · {entry.action==='acquired'?'Ganhou':entry.action==='intensified'?'Intensificou':'Perdeu'} {perkById.get(entry.id)?.name??entry.id}
-      </li>)}</ul></>}
-      <dl className="profile-attributes">{Object.entries(profile.attributes).map(([key,value])=><div key={key}><dt>{attributeLabels[key.slice(key.indexOf('_')+1)]??key}</dt><dd>{Math.round(value)}</dd></div>)}</dl>
-      {!!profile.history?.length&&<><h3>Histórico do atleta</h3><ul>{profile.history.map((entry,index)=><li key={index}>Dia {entry.day} · {entry.description}</li>)}</ul></>}
-    </section>}
+    {profile&&<PlayerProfilePanel key={profile.id} player={profile} players={players} career={career} contracts={contracts} organizations={organizations} startFull={profile.id===initialPlayerId} onClose={()=>setProfile(null)}/>}
     {comparing&&selected.length===2&&<section className="panel profile-panel" aria-label="Comparação de jogadores">
       <div className="profile-heading"><h2>Comparação</h2><button onClick={()=>setComparing(false)}>Fechar comparação</button></div>
       <div className="player-table"><table>
@@ -168,6 +157,7 @@ export function Players({career,players,contracts,organizations,view,onFinish,on
           <div><strong>{rankedView?'#'+rankById.get(player.id)+' · ':''}{player.nickname} · {roleNames[player.role]}</strong><small>{player.name} · {age} anos · {regions.of(player.country)} · {club}</small></div>
           {rankedView&&<span>{rankedStats(player).points.toLocaleString('pt-BR')} {player.mode==='MOBA'?'PdL':'pts'} · {rankedStats(player).winRate.toLocaleString('pt-BR')}% vitórias</span>}
           <span className="muted">{player.mode}</span><strong>OVR {Math.round(player.overall)}</strong>
+          {risingView&&<span>+{gains.get(player.id)!.toLocaleString('pt-BR')} OVR recente</span>}
           <span className="muted">{player.estimateLow!==null?`POT. ${player.estimateLow}–${player.estimateHigh}`:'POT. —'}</span>
           {view==='players'&&<label className="compare-choice">
             <input type="checkbox" aria-label={'Selecionar '+player.nickname+' para comparação'}
@@ -192,19 +182,9 @@ export function Players({career,players,contracts,organizations,view,onFinish,on
             <button disabled={player.mode!==career.mode} onClick={()=>setOffer(player)}>{player.mode===career.mode?'Negociar':'Outra modalidade'}</button></div>}
         </article>;
       })}
-    {!filtered.length&&<p>Nenhum jogador encontrado.</p>}</div>
+    {!filtered.length&&<p>{risingView?'Nenhum atleta com histórico suficiente e ganho de pelo menos 0,5 Overall nos últimos 30 a 90 dias para estes filtros.':'Nenhum jogador encontrado.'}</p>}</div>
     <footer><button disabled={activePage===0} onClick={()=>setPage(activePage-1)}>← Anterior</button>
       <span>{filtered.length} jogadores · Página {activePage+1}</span>
       <button disabled={(activePage+1)*pageSize>=filtered.length} onClick={()=>setPage(activePage+1)}>Próxima →</button></footer>
   </>;
 }
-
-const attributeLabels:Record<string,string>={
-  mechanics:'Mecânica',reflexes:'Reflexos',precision:'Precisão',execution:'Execução',control:'Controle',
-  vision:'Visão',positioning:'Posicionamento',objectives:'Objetivos',map:'Mapa',decisions:'Decisões',
-  reading:'Leitura de jogo',meta:'Meta',laning:'Fase de rotas',teamfights:'Confrontos coletivos',
-  consistency:'Consistência',adaptation:'Adaptação',communication:'Comunicação',coordination:'Coordenação',
-  teamwork:'Trabalho em equipe',leadership:'Liderança',aim:'Mira',recoil:'Recuo',movement:'Movimentação',
-  reaction:'Reação',utility:'Utilitários',angles:'Ângulos',awareness:'Consciência situacional',
-  space:'Controle de espaço',composure:'Compostura',
-};

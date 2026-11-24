@@ -23,7 +23,7 @@ test('worker promove, treina principal e Academy, recarrega e limpa vínculo enc
  try{
    db.exec(schema+contractSchema);migrateCalendar(sql=>db.exec(sql),1);db.exec(phaseOneSchema+negotiationSchema+'PRAGMA user_version=4');
    db.exec("INSERT INTO careers VALUES('a','Aurora','AUR','BR','MOBA','Normal',100000000,'#aabbcc','animals_wolf','2026',1)");
-   const players=[base,{...base,id:2,nickname:'Main'},{...base,id:3,birthDay:-11000}];
+   const players=[base,{...base,id:2,nickname:'Main'},{...base,id:3,birthDay:-10000}];
    db.prepare('INSERT INTO web_career_world VALUES(?,?,?,?)').run('a',42,generationVersion,JSON.stringify(players));
    const run=(sql:string,bind:(string|number)[])=>{db.prepare(sql).run(...bind);};
    const read=(sql:string,bind:(string|number)[])=>db.prepare(sql).get(...bind);
@@ -46,6 +46,12 @@ test('worker promove, treina principal e Academy, recarrega e limpa vínculo enc
    await request('facility-upgrade',{careerId:'a',kind:'academy',expectedLevel:0});
    await request('advance',{careerId:'a',expectedDay:1,days:30});
    const world=await request('world-players','a');
+   const stable=world.find((p:Player)=>p.id===3);
+   assert.equal(stable.overall,50);
+   assert.equal(stable.developmentHistory.length,1);
+   assert.equal(stable.developmentHistory[0].day,31);
+   assert.equal(stable.developmentHistory[0].overall,50);
+   assert.ok(!Object.hasOwn(stable,'ceiling'));
    assert.ok(world.find((p:Player)=>p.id===1).attributes.moba_mechanics>world.find((p:Player)=>p.id===2).attributes.moba_mechanics);
    assert.ok(world.find((p:Player)=>p.id===2).attributes.moba_reading>world.find((p:Player)=>p.id===1).attributes.moba_reading);
    const withoutFacility=developPlayer(base,1,31,[{focus:'mechanics',fromDay:1,toDay:365}]);

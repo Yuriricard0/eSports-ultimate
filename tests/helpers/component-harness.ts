@@ -24,6 +24,7 @@ export function appHarness(repository:Record<string,unknown>,players:unknown[]=[
    require:(name:string)=>{
      if(name==='react')return hooks;if(name==='react/jsx-runtime')return req(name);
      if(name==='./view-preferences')return preferences;
+     if(name==='./player-labels')return req(resolve(dirname(file),name)+'.ts');
      if(name.includes('/persistence/repository'))return repository;
      if(name.startsWith('../game-core/'))return req(resolve(dirname(file),name)+'.ts');
      if(name==='../version')return req(resolve(dirname(file),name)+'.ts');
