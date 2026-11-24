@@ -10,7 +10,11 @@ import {startingEntry} from '../game-core/entry';
 import type {WorldCatalog} from '../game-core/world';
 import {addRankedProspects,addWorldTraits,generateWorld,generationVersion} from '../game-core/generation';
 import {publicTraits} from '../game-core/traits';
+import {publicPerkInfluences,withPersonalObjective} from '../game-core/player-identity';
 import {developPlayer,playerCondition} from '../game-core/development';
+import {observeOverall} from '../game-core/player-analysis';
+import {applyFavorite,favoriteIds,favoriteLineupSchema,favoriteName,validateFavoritePlayers} from '../game-core/lineup-favorites';
+import {competitionMilestones,participated,rosterEventNames,type PlayerMilestone} from '../game-core/player-milestones';
 import {applyAdaptation,renewWorld,seasonBoundaries} from '../game-core/renewal';
 import {applyPerkEvent} from '../game-core/perk-events';
 import {confirmOffer,negotiationSchema,submitOffer} from '../game-core/negotiation';
@@ -18,7 +22,7 @@ import {departPlayer,maintainRosters,renewContract,saleOptions} from '../game-co
 import {assignAcademy,setTrainingFocus} from '../game-core/academy';
 import type {PlayerTraining,TrainingPlan} from '../game-core/training';
 import {matchSchema,prepareMatch,completeMatch} from '../game-core/match-store';
-import {careerLineup,rivalLineup,matchStrength,applyMatchConditions,type MatchSide} from '../game-core/matches';
+import {careerLineup,rivalLineup,matchStrength,applyMatchConditions,type MatchResult,type MatchSide} from '../game-core/matches';
 import {defaultCompetitionConfig,generateSeason,hashSeed,nextUserFixture,playCompetitionFixture,validateCompetitionConfig,type Participant,type Season} from '../game-core/competitions';
 import {competitionSchema,latestSeason,nextSeasonStart,storeNewSeason,persistSeason} from '../game-core/competition-store';
 import {initializeFinance,refreshSponsorOffers,acceptSponsor,rejectSponsor,paySponsors,upgradeFacility,facilityEfficiency,type FacilityLevels} from '../game-core/finance';
@@ -27,6 +31,11 @@ import {newsSchema,synchronizeNews,listNews,processMoodEvent,recordDevelopmentNe
 import {migrateZeroSigningBonus} from '../game-core/contract-migration';
 
 const webVersion=10;
+function publicPlayer({ceiling:_,temperament:__,perkEvents:___,perkInfluences,...player}:Player,discovered:boolean){
+ const perks=publicTraits(player.perks??[],discovered);
+ return {...player,perks,perkInfluences:publicPerkInfluences(perkInfluences,perks),
+   perkHistory:discovered?player.perkHistory:player.perkHistory?.filter(event=>perks.some(perk=>perk.id===event.id))};
+}
 const careerQuery=`SELECT careers.*, w.config, COALESCE(s.name,'') AS saveName, v.created_version AS createdVersion,
  e.league_id AS entryLeague,e.kind AS entryKind,e.displaced_team_id AS displacedTeam,
  EXISTS(SELECT 1 FROM web_godot_source g WHERE g.career_id=careers.id) AS hasGodotSource,
@@ -78,7 +87,7 @@ const initialized=(async()=>{
  if(/CHECK\s*\(\s*bonus\s*>\s*0\s*\)/i.test(String(db.selectValue("SELECT sql FROM sqlite_schema WHERE name='web_contracts'")))){
    migrateZeroSigningBonus(sql=>{db.exec(sql);});
  }
- db.exec(contractSchema+phaseOneSchema+negotiationSchema+matchSchema+competitionSchema+newsSchema+saveVersionSchema);
+ db.exec(contractSchema+phaseOneSchema+negotiationSchema+matchSchema+competitionSchema+newsSchema+saveVersionSchema+favoriteLineupSchema);
  db.transaction(()=>{
    for(const row of db.selectObjects('SELECT id FROM careers'))initializeFinance((sql,bind)=>{db.exec({sql,bind});},(sql,bind)=>db.selectObject(sql,bind),(sql,bind)=>db.selectObjects(sql,bind),String(row.id));
    db.exec('PRAGMA user_version=10;');
@@ -119,9 +128,10 @@ async function handleRequest(event:MessageEvent){
    return players;
  };
  const aiHiring=(careerId:string,day:number)=>(organization:string,player:Player)=>aiHire(run,read,careerId,organization,player,day);
- const writeMarketPlayers=(careerId:string,players:Player[])=>{
+ const writeMarketPlayers=(careerId:string,players:Player[],day=get(careerId)?.day??1)=>{
    const existing=savedPlayers(careerId);
    if(typeof existing!=='string')throw Error('Carregue o mundo da carreira antes de negociar.');
+   players=players.map(player=>withPersonalObjective(player,day));
    run('UPDATE web_career_world SET players=? WHERE career_id=?',[JSON.stringify(players.filter(p=>p.id>=0)),careerId]);
    for(const player of players.filter(p=>p.id<0))run('UPDATE web_imported_players SET data=? WHERE career_id=? AND player_id=?',[JSON.stringify(player),careerId,player.id]);
  };
@@ -177,7 +187,7 @@ async function handleRequest(event:MessageEvent){
  const c=careerInput({...input,color:identity.primary,symbol:identity.symbol});const careerId=crypto.randomUUID();
  const entry=startingEntry(await loadWorld(),c.country,c.mode);
  const seed=crypto.getRandomValues(new Uint32Array(1))[0];
- const world=addRankedProspects(generateWorld(await loadPlayers(),seed),seed);
+ const world=addRankedProspects(generateWorld(await loadPlayers(),seed),seed).map(player=>withPersonalObjective(player,1));
  db.transaction(()=>{
    db.exec({sql:'INSERT INTO careers(id,name,code,country,mode,difficulty,balance,color,symbol,created) VALUES(?,?,?,?,?,?,?,?,?,?)',bind:[careerId,c.name,c.code,c.country,c.mode,c.difficulty,c.balance,c.color,c.symbol,new Date().toISOString()]});
    db.exec({sql:'INSERT INTO web_save_versions VALUES(?,?)',bind:[careerId,careerCreationVersion]});
@@ -221,7 +231,7 @@ async function handleRequest(event:MessageEvent){
        db.exec({sql:'INSERT INTO web_identity VALUES(?,?)',bind:[careerId,JSON.stringify(c.identity)]});
        db.exec({sql:'INSERT INTO web_godot_source VALUES(?,?)',bind:[careerId,bytes]});
        for(const {player,member,starter,contract} of roster){
-         db.exec({sql:'INSERT INTO web_imported_players VALUES(?,?,?,?,?)',bind:[careerId,player.id,JSON.stringify(player),Number(member),Number(starter)]});
+         db.exec({sql:'INSERT INTO web_imported_players VALUES(?,?,?,?,?)',bind:[careerId,player.id,JSON.stringify(withPersonalObjective(player,c.day)),Number(member),Number(starter)]});
          if(contract)db.exec({sql:'INSERT INTO web_contracts VALUES(?,?,?,?,?,?,?,?)',
            bind:[careerId,player.id,player.role,Number(starter),Number(contract.salary_cents),Number(contract.signing_bonus_cents),Number(contract.start_day),Number(contract.end_day)]});
        }
@@ -238,23 +248,53 @@ async function handleRequest(event:MessageEvent){
  deleteCareer((sql,bind)=>{db.exec({sql,bind});},input);
  result=list();
  }else if(action==='imported-players'){
- result=db.selectObjects('SELECT data FROM web_imported_players WHERE career_id=?',[input]).map(row=>JSON.parse(String(row.data)));
+ const day=Number(db.selectValue('SELECT day FROM careers WHERE id=?',[input]));
+ result=db.selectObjects('SELECT data,member FROM web_imported_players WHERE career_id=?',[input]).map(row=>{
+   const player=JSON.parse(String(row.data)) as Player,updated=withPersonalObjective(player,day);
+   if(updated!==player)run('UPDATE web_imported_players SET data=? WHERE career_id=? AND player_id=?',[JSON.stringify(updated),input,player.id]);
+   return publicPlayer(updated,Boolean(row.member));
+ });
  }else if(action==='world-players'){
  const stored=db.selectObject('SELECT seed,version,players FROM web_career_world WHERE career_id=?',[input]);
  if(!stored&&!get(input))throw Error('Carreira não encontrada.');
  const seed=stored?Number(stored.seed):Array.from(String(input)).reduce((acc,char)=>(Math.imul(acc,31)+char.charCodeAt(0))>>>0,0);
  const source=stored?JSON.parse(String(stored.players)) as Player[]:await loadPlayers();
  const day=Number(db.selectValue('SELECT day FROM careers WHERE id=?',[input]));
- const players=stored?.version===generationVersion?source:addRankedProspects(addWorldTraits(source,seed),seed,day);
- if(stored?.version!==generationVersion){
+ let players=stored?.version===generationVersion?source:addRankedProspects(addWorldTraits(source,seed),seed,day);
+ if(stored?.version!==generationVersion||players.some(player=>!player.personalObjective)){
+   players=players.map(player=>withPersonalObjective(player,day));
    db.exec({sql:'INSERT INTO web_career_world VALUES(?,?,?,?) ON CONFLICT(career_id) DO UPDATE SET version=excluded.version,players=excluded.players',
      bind:[input,seed,generationVersion,JSON.stringify(players)]});
  }
  const discovered=new Set(db.selectObjects('SELECT DISTINCT player_id FROM web_contracts WHERE career_id=?',[input]).map(row=>Number(row.player_id)));
- result=players.map(({ceiling:_,temperament:__,...player})=>({...player,condition:{...playerCondition(player,day),day},
-   perks:publicTraits(player.perks??[],discovered.has(player.id))}));
+ result=players.map(player=>({...publicPlayer(player,discovered.has(player.id)),condition:{...playerCondition(player,day),day}}));
  }else if(action==='contracts'){
  result=contractsFor(input);
+ }else if(action==='lineup-favorites'){
+   result=all('SELECT id,name,players FROM web_lineup_favorites WHERE career_id=? ORDER BY name,id',[input]).map(row=>({id:row.id,name:row.name,playerIds:favoriteIds(JSON.parse(String(row.players)))}));
+ }else if(action==='lineup-favorite-create'){
+   const current=get(input.careerId);
+   if(!current)throw Error('Carreira não encontrada.');
+   const name=favoriteName(input.name),players=await marketPlayers(current.id);
+   const ids=contractsFor(current.id).filter(c=>c.starter&&!c.academy).map(c=>c.player_id);
+   validateFavoritePlayers(ids,current.mode as Mode,players,contractsFor(current.id));
+   if(Number(read('SELECT COUNT(*) n FROM web_lineup_favorites WHERE career_id=?',[current.id])?.n)>=12)throw Error('Limite de 12 escalações favoritas.');
+   run('INSERT INTO web_lineup_favorites VALUES(?,?,?,?)',[current.id,crypto.randomUUID(),name,JSON.stringify(ids)]);
+   result=true;
+ }else if(action==='lineup-favorite-rename'||action==='lineup-favorite-delete'||action==='lineup-favorite-apply'){
+   const {careerId,id}=input;
+   const players=action==='lineup-favorite-apply'?await marketPlayers(careerId):null;
+   const favorite=read('SELECT players FROM web_lineup_favorites WHERE career_id=? AND id=?',[careerId,id]);
+   if(!favorite)throw Error('Escalação favorita não encontrada.');
+   if(action==='lineup-favorite-rename')run('UPDATE web_lineup_favorites SET name=? WHERE career_id=? AND id=?',[favoriteName(input.name),careerId,id]);
+   if(action==='lineup-favorite-delete')run('DELETE FROM web_lineup_favorites WHERE career_id=? AND id=?',[careerId,id]);
+   if(players){
+     const current=get(careerId)!;
+     const ids=JSON.parse(String(favorite.players));
+     validateFavoritePlayers(ids,current.mode as Mode,players,contractsFor(careerId));
+     applyFavorite(run,read,careerId,ids,()=>contractsFor(careerId));
+   }
+   result=get(careerId);
  }else if(action==='starter'){
  selectStarter((sql,bind)=>{db.exec({sql,bind});},(sql,bind)=>db.selectObject(sql,bind),input.careerId,input.playerId);
  result=true;
@@ -348,8 +388,11 @@ async function handleRequest(event:MessageEvent){
  const {sides,players}=await matchContext(input.careerId,String(match.opponent_team_id));
  const completed=completeMatch(run,read,input.careerId,input.id,sides,result=>writeMarketPlayers(input.careerId,applyMatchConditions(players,result)));
  result={career:get(input.careerId),result:completed};
- }else if(action==='timeline'){
- result=db.selectObjects(`
+ }else if(action==='timeline'||action==='player-milestones'){
+ const personal=action==='player-milestones';
+ const careerId=personal?input.careerId:input;
+ if(personal&&!Number.isSafeInteger(input.playerId))throw Error('Atleta inválido.');
+ const rows=db.selectObjects(`SELECT * FROM (
    SELECT start_day AS day,player_id,'hired' AS kind FROM web_contracts WHERE career_id=?
    UNION ALL SELECT end_day+1,player_id,'expired' FROM web_contracts c
      WHERE career_id=? AND end_day<(SELECT day FROM careers WHERE id=?)
@@ -357,7 +400,18 @@ async function handleRequest(event:MessageEvent){
    UNION ALL SELECT day,player_id,'starter' FROM web_lineup_history WHERE career_id=?
    UNION ALL SELECT day,player_id,kind FROM web_market_moves WHERE career_id=? AND kind IN ('sold','released','renewed')
    UNION ALL SELECT day,0,'match' FROM web_matches WHERE career_id=? AND result<>''
-   ORDER BY day DESC,player_id,kind LIMIT 200`,[input,input,input,input,input,input]);
+   ) ${personal?'WHERE player_id=?':''} ORDER BY day DESC,player_id,kind ${personal?'':'LIMIT 200'}`,
+   personal?[careerId,careerId,careerId,careerId,careerId,careerId,input.playerId]:[careerId,careerId,careerId,careerId,careerId,careerId]);
+ if(!personal)result=rows;
+ else{
+   const events:PlayerMilestone[]=rows.map(row=>({day:Number(row.day),kind:'Vínculo',text:rosterEventNames[row.kind as keyof typeof rosterEventNames]}));
+   for(const row of all("SELECT id,result FROM web_matches WHERE career_id=? AND result<>'' AND EXISTS(SELECT 1 FROM json_each(result,'$.stats') WHERE json_extract(value,'$.playerId')=?)",[careerId,input.playerId])){
+     const match=JSON.parse(String(row.result)) as MatchResult;
+     if(participated(match,input.playerId))events.push({id:`friendly:${row.id}`,day:match.day,kind:'Partida',text:`Amistoso · ${match.teams[0].name} × ${match.teams[1].name}${match.mvp===input.playerId?' · MVP':''}`});
+   }
+   const seasons=all('SELECT data FROM web_competition_seasons WHERE career_id=?',[careerId]).map(row=>JSON.parse(String(row.data)) as Season);
+   result=[...events,...competitionMilestones(seasons,input.playerId)];
+ }
  }else if(action==='advance'){
  if(![1,7,30].includes(input.days))throw Error('Escolha 1, 7 ou 30 dias.');
  const advancingCareer=get(input.careerId)!;
@@ -389,11 +443,13 @@ async function handleRequest(event:MessageEvent){
    const annual=seasonBoundaries(from,to);
    for(let day=from+1;day<=to;day++){
      const beforeDevelopment=players;
+     const monthly=(day-1)%30===0;
      const adaptation=new Map(contracts.filter(c=>c.start_day<=day&&c.end_day>=day&&[30,60].includes(day-c.start_day)).map(c=>[c.player_id,c]));
      players=players.map(player=>{
        let updated=developPlayer(player,day-1,day,trainingPlans.get(player.id)??noTraining);
        const contract=adaptation.get(player.id);
-       if(contract)updated=applyAdaptation(updated,contract,day,seed);return updated;
+       if(contract)updated=applyAdaptation(updated,contract,day,seed);
+       return monthly?observeOverall(updated,day):updated;
      });
      if(day%30===0){syncAiAccounts(run,read,all,input.careerId,players,marketCatalog.organizations.map(org=>org.id),day);payAiSalaries(run,all,input.careerId,day);}
      if(annual.includes(day))players=renewWorld(players,seed,day,contracts,aiHiring(input.careerId,day));
@@ -407,7 +463,7 @@ async function handleRequest(event:MessageEvent){
    }
    const owned=ownedIds(input.careerId);
    players=maintainRosters(players,marketCatalog,owned,to,aiHiring(input.careerId,to));
-   writeMarketPlayers(input.careerId,players);
+   writeMarketPlayers(input.careerId,players,to);
    for(const row of all('SELECT player_id FROM web_player_training WHERE career_id=?',[input.careerId])){
      if(!owned.has(Number(row.player_id)))run('DELETE FROM web_player_training WHERE career_id=? AND player_id=?',[input.careerId,Number(row.player_id)]);
    }

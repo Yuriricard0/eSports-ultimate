@@ -1,10 +1,12 @@
 import {useState} from 'react';
 import {filterOrganizations,type Organization,type WorldCatalog,type WorldFilter} from '../game-core/world';
-import type {Player} from '../game-core/recruitment';
+import type {Contract,Player} from '../game-core/recruitment';
 import type {Career} from '../game-core/career';
 import {PlayerPortrait} from './PlayerPortrait';
 import {roleNames} from './Players';
-import {clubPhilosophy,estimatedStrength} from '../game-core/team-analysis';
+import {estimatedStrength} from '../game-core/team-analysis';
+import {ClubDna} from './ClubDna';
+import {PlayerProfilePanel} from './PlayerProfilePanel';
 import {useViewPreference} from './view-preferences';
 
 const displayCountries=new Intl.DisplayNames(['pt-BR'],{type:'region'});
@@ -17,14 +19,15 @@ function ClubLogo({club}:{club:Organization}) {
     : <span className="monogram" title="Logo original pendente">{club.code}</span>;
 }
 
-export function WorldDirectory({catalog,players,view,onNavigate,career}:{
+export function WorldDirectory({catalog,players,view,onNavigate,career,contracts=[]}:{
   catalog:WorldCatalog;players:Player[];view:'organizations'|'leagues';onNavigate:(view:string)=>void;
-  career?:Career|null;
+  career?:Career|null;contracts?:Contract[];
 }) {
   const [filter,setFilter]=useViewPreference(`${career?.id??'guest'}:${view}:filters`,defaults);
   const [page,setPage]=useState(0);
   const [clubId,setClubId]=useState('');
   const [teamId,setTeamId]=useState('');
+  const [profileId,setProfileId]=useState<number|null>(null);
   const [showStrength,setShowStrength]=useState(false);
   const [strengthMode,setStrengthMode]=useState(career?.mode??'MOBA');
   const leaguesById=new Map(catalog.leagues.map(league=>[league.id,league]));
@@ -35,6 +38,7 @@ export function WorldDirectory({catalog,players,view,onNavigate,career}:{
   const team=teams.find(team=>team.id===teamId)??teams[0];
   const league=team&&leaguesById.get(team.league);
   const teamPlayers=team ? players.filter(player=>player.team===team.id) : [];
+  const profile=teamPlayers.find(player=>player.id===profileId);
   const strength=estimatedStrength(teamPlayers);
   const countries=[...new Set(catalog.organizations.map(org=>org.country))].sort((a,b)=>countryName(a).localeCompare(countryName(b),'pt-BR'));
   const leagues=catalog.leagues.filter(league=>!filter.mode||filter.mode===league.discipline);
@@ -57,13 +61,16 @@ export function WorldDirectory({catalog,players,view,onNavigate,career}:{
     {team&&league&&<section className="central-panel">
       <h2>{team.name} · {league.name}</h2>
       <p>{league.season}{team.tier>0?' · Tier '+team.tier:''}{team.global_rank>0?' · VRS global #'+team.global_rank:''}</p>
-      <p>Filosofia no jogo: {clubPhilosophy(club.reputation,team.academy,teams.some(item=>item.academy))}</p>
+      <ClubDna players={teamPlayers} day={career?.day??1} reputation={club.reputation} academy={team.academy} hasAcademy={teams.some(item=>item.academy)}/>
       <p>Força estimada: {strength===null?'—':strength.toLocaleString('pt-BR')}</p>
       <ul className="world-roster">{teamPlayers.map(player=><li key={player.id}>
         <PlayerPortrait index={player.portraitIndex}/><div><strong>{player.nickname}</strong><small>{roleNames[player.role]}</small></div><b>OVR {Math.round(player.overall)}</b>
+        <button aria-label={`Perfil de ${player.nickname}`} onClick={()=>setProfileId(player.id)}>Perfil →</button>
       </li>)}</ul>
       {!teamPlayers.length&&<p>Elenco indisponível no catálogo.</p>}
     </section>}
+    {profile&&<PlayerProfilePanel key={profile.id} player={profile} players={players} career={career} contracts={contracts}
+      organizations={Object.fromEntries(catalog.organizations.map(org=>[org.id,org.name]))} onClose={()=>setProfileId(null)}/>}
   </>;
 
   return <>

@@ -9,6 +9,8 @@ import {playerCondition,teamChemistry} from '../game-core/development';
 import {affinity,estimatedStrength} from '../game-core/team-analysis';
 import type {WorldCatalog} from '../game-core/world';
 import {NewsPanel} from './News';
+import {ClubDna} from './ClubDna';
+import {ChemistryMap} from './ChemistryMap';
 import {nextUserFixture,type Season} from '../game-core/competitions';
 import type {StoredMatch} from '../game-core/match-store';
 import {careerAgenda} from '../game-core/career-agenda';
@@ -111,9 +113,11 @@ export function CareerDashboard({career,country,players,contracts,emblem,navigat
           <button onClick={()=>navigate('academy')}>Gerenciar Academy →</button><button onClick={()=>navigate('training')}>Treinamento →</button>
           <p><abbr title="Quanto os titulares estão acostumados a jogar juntos.">Entrosamento</abbr> {chemistry===null?'—':chemistry+'%'}</p>
           <p><abbr title="Estimativa da qualidade da equipe que considera titulares, atributos e vagas abertas.">Força estimada</abbr> {strength===null?'—':strength.toLocaleString('pt-BR')}</p>
-          {!!relationships.length&&<details><summary>Afinidades entre titulares</summary>
-            <ul>{relationships.map(pair=><li key={pair.left.id+':'+pair.right.id}>{pair.left.nickname} e {pair.right.nickname} · {pair.score}% · {pair.days} dias no clube</li>)}</ul>
-          </details>}
+          <ClubDna players={squad} day={career.day} reputation={career.reputation??40} hasAcademy={contracts.some(contract=>!!contract.academy)} contracts={contracts}/>
+          <details><summary>Como o entrosamento é calculado</summary>
+            <p>A média das afinidades entre pares de titulares forma o entrosamento. Cada par considera o tempo de vínculo em comum, atributos sociais, estilos e funções complementares. Mudanças na escalação mudam os pares usados na média.</p>
+            {relationships.length?<ChemistryMap players={lineup.map(member=>member.player)} relationships={relationships}/>:<p>São necessários pelo menos dois titulares para calcular afinidade.</p>}
+          </details>
         </section>
       </div>
     </div>

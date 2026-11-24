@@ -1,5 +1,6 @@
 import type {PerkInstance,Personality,Temperament} from './traits.ts';
 import type {Condition,DevelopmentPoint} from './development.ts';
+import type {PersonalObjective,PerkInfluence} from './player-identity.ts';
 import {trainingSchema} from './training.ts';
 import {financeSchema,recordCash} from './finance.ts';
 
@@ -20,6 +21,8 @@ export type Player = {
   attributes: Record<string,number>;
   history?: {day:number;description:string}[];
   personality?:Personality;
+  personalObjective?:PersonalObjective;
+  perkInfluences?:PerkInfluence[];
   temperament?:Temperament;
   perks?:PerkInstance[];
   condition?:Condition&{day:number};
@@ -102,6 +105,15 @@ export function terms(overall:number) {
 export function selectStarter(run:Run,read:Read,careerId:string,playerId:number){
   run('BEGIN IMMEDIATE',[]);
   try{
+    updateStarter(run,read,careerId,playerId);
+    run('COMMIT',[]);
+  }catch(error){
+    run('ROLLBACK',[]);
+    throw error;
+  }
+}
+
+export function updateStarter(run:Run,read:Read,careerId:string,playerId:number){
     const day=Number(read('SELECT day FROM careers WHERE id=?',[careerId])?.day);
     if(read('SELECT 1 FROM web_player_training WHERE career_id=? AND player_id=? AND academy=1',[careerId,playerId]))throw Error('Promova o atleta da Academy ao elenco principal antes de escalá-lo.');
     const candidate=read(`SELECT role FROM web_current_contracts WHERE career_id=? AND player_id=? AND start_day<=? AND end_day>=?`,
@@ -115,11 +127,6 @@ export function selectStarter(run:Run,read:Read,careerId:string,playerId:number)
     if(candidate)run('UPDATE web_contracts SET starter=1 WHERE (career_id,player_id,start_day) IN (SELECT career_id,player_id,start_day FROM web_current_contracts WHERE career_id=? AND player_id=?)', [careerId,playerId]);
     else run('UPDATE web_imported_players SET starter=1 WHERE career_id=? AND player_id=?',[careerId,playerId]);
     run('INSERT OR IGNORE INTO web_lineup_history VALUES(?,?,?)',[careerId,day,playerId]);
-    run('COMMIT',[]);
-  }catch(error){
-    run('ROLLBACK',[]);
-    throw error;
-  }
 }
 
 export function hire(run:Run, read:Read, careerId:string, player:Pick<Player,'id'|'mode'|'role'|'organization'|'overall'|'status'>,legacyStarter=false,onSigned?:(day:number)=>void,negotiated?:{bonus:number;salary:number;days:number}) {

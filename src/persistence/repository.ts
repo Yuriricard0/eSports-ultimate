@@ -11,6 +11,8 @@ import type {CompetitionConfig,Season} from '../game-core/competitions';
 import type {CashCategory,FacilityKind} from '../game-core/finance';
 import type {NewsFilter,NewsPage} from '../game-core/news';
 import {trackSave} from '../game-core/save-status';
+import type {FavoriteLineup} from '../game-core/lineup-favorites';
+import type {PlayerMilestone} from '../game-core/player-milestones';
 let worker:Worker;
 let storageFailure:Error|undefined;
 let sequence=0;
@@ -30,7 +32,8 @@ export async function initialize(){
 }
 const saveActions=new Set(['delete','create','import','identity','rename','starter','prepare-match','play-match','cancel-match',
  'start-season','competition-config','play-competition','sponsor-accept','sponsor-reject','facility-upgrade','assign-academy',
- 'set-training','submit-offer','confirm-offer','cancel-offer','renew-contract','depart-player','advance']);
+ 'set-training','submit-offer','confirm-offer','cancel-offer','renew-contract','depart-player','advance',
+ 'lineup-favorite-create','lineup-favorite-rename','lineup-favorite-delete','lineup-favorite-apply']);
 function request<T>(action:string,input?:unknown):Promise<T>{
  const send=()=>new Promise<T>((resolve,reject)=>{
  if(storageFailure){reject(storageFailure);return;}
@@ -51,6 +54,10 @@ export const saveIdentity=(careerId:string,identity:Identity)=>request<Career>('
 export const renameSave=(careerId:string,name:string)=>request<Career[]>('rename',{careerId,name});
 export const listContracts=(id:string)=>request<Contract[]>('contracts',id);
 export const setStarter=(careerId:string,playerId:number)=>request<boolean>('starter',{careerId,playerId});
+export const listFavoriteLineups=(careerId:string)=>request<FavoriteLineup[]>('lineup-favorites',careerId);
+export const createFavoriteLineup=(careerId:string,name:string)=>request<boolean>('lineup-favorite-create',{careerId,name});
+export const updateFavoriteLineup=(careerId:string,id:string,action:'rename'|'delete'|'apply',name?:string)=>
+ request<Career>(`lineup-favorite-${action}`,{careerId,id,name});
 export const listTraining=(careerId:string)=>request<PlayerTraining[]>('training',careerId);
 export const listMatches=(careerId:string)=>request<StoredMatch[]>('matches',careerId);
 export const prepareFriendly=(careerId:string,opponentId:string)=>request<StoredMatch>('prepare-match',{careerId,opponentId});
@@ -86,6 +93,7 @@ export const listMarketMoves=(careerId:string)=>request<MarketMove[]>('market-mo
 export type PayrollEntry={player_id:number;due_day:number;amount:number;paid:number};
 export type TimelineEntry={day:number;player_id:number;kind:'hired'|'expired'|'starter'|'sold'|'released'|'renewed'|'match'};
 export const listTimeline=(careerId:string)=>request<TimelineEntry[]>('timeline',careerId);
+export const listPlayerMilestones=(careerId:string,playerId:number)=>request<PlayerMilestone[]>('player-milestones',{careerId,playerId});
 export const listPayroll=(careerId:string)=>request<PayrollEntry[]>('calendar',careerId);
 export const advanceDays=(careerId:string,expectedDay:number,days:number)=>
  request<{report:CalendarResult;career:Career}>('advance',{careerId,expectedDay,days});

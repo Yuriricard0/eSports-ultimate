@@ -3,8 +3,7 @@ import {formatCareerDay} from '../game-core/calendar';
 import type {Career} from '../game-core/career';
 import type {Contract,Player} from '../game-core/recruitment';
 import {listTimeline,type TimelineEntry} from '../persistence/repository';
-
-const names={hired:'Início do contrato',expired:'Fim do contrato',starter:'Promovido a titular',sold:'Vendido',released:'Dispensado',renewed:'Contrato renovado',match:'Partida concluída · resultado na tela Partidas'};
+import {rosterEventNames} from '../game-core/player-milestones';
 export function CareerTimeline({career,players,contracts}:{career:Career;players:Player[];contracts:Contract[]}){
   const [events,setEvents]=useState<TimelineEntry[]|null>(null);
   const [error,setError]=useState('');
@@ -16,7 +15,7 @@ export function CareerTimeline({career,players,contracts}:{career:Career;players
   const roster=new Set([...(events??[]).map(event=>event.player_id),...contracts.map(contract=>contract.player_id)]);
   const nicknames=new Map(players.map(player=>[player.id,player.nickname]));
   const entries=[
-    ...(events??[]).map(event=>({day:event.day,text:names[event.kind]+(event.kind==='match'?'':' · '+(nicknames.get(event.player_id)??'Atleta '+event.player_id))})),
+    ...(events??[]).map(event=>({day:event.day,text:rosterEventNames[event.kind]+(event.kind==='match'?' · resultado na tela Partidas':' · '+(nicknames.get(event.player_id)??'Atleta '+event.player_id))})),
     ...players.filter(player=>roster.has(player.id)).flatMap(player=>[
       ...(player.developmentHistory??[]).filter(point=>
         contracts.some(contract=>contract.player_id===player.id&&contract.start_day<=point.day&&contract.end_day>=point.day)||
