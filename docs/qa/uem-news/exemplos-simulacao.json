@@ -1,0 +1,479 @@
+[
+  {
+    "mode": "MOBA",
+    "day": 80,
+    "total": 78,
+    "firstQueryMs": 253.35949999999866,
+    "repeatQueryMs": 140.5447000000022,
+    "categories": {
+      "categories": [
+        "Campeonatos",
+        "Mercado"
+      ],
+      "modes": [
+        "MOBA"
+      ],
+      "organizations": [
+        "anyone_s_legend",
+        "bilibili_gaming",
+        "career",
+        "cloud9",
+        "ctbc_flying_oyster",
+        "detonation_focusme",
+        "dignitas",
+        "disguised",
+        "dn_soopers",
+        "dplus_kia",
+        "fluxo_w7m",
+        "flyquest",
+        "fnatic",
+        "fukuoka_softbank_hawks_gaming",
+        "g2_esports",
+        "gam_esports",
+        "gen_g",
+        "ground_zero_gaming",
+        "hanjin_brion",
+        "hanwha_life_esports",
+        "invictus_gaming",
+        "kiwoom_drx",
+        "kt_rolster",
+        "leviatan",
+        "lgd_gaming",
+        "los",
+        "loud",
+        "lyon",
+        "movistar_koi",
+        "mvk_esports",
+        "navi",
+        "ninjas_in_pyjamas",
+        "nongshim_red_force",
+        "pain_gaming",
+        "red_kalunga",
+        "relove_deep_cross_gaming",
+        "sentinels",
+        "shifters",
+        "shopify_rebellion",
+        "sk_gaming",
+        "team_heretics",
+        "team_liquid",
+        "team_secret_whales",
+        "team_vitality",
+        "top_esports",
+        "vivo_keyd_stars",
+        "weibo_gaming",
+        "xi_an_team_we"
+      ]
+    },
+    "examples": [
+      {
+        "mode": "MOBA",
+        "origin": "champion",
+        "relevance": 100,
+        "content": "TOP ESPORTS conquista Liga China e leva o título regional.",
+        "visual": {
+          "kind": "trophy",
+          "label": "Liga China",
+          "destination": "TOP ESPORTS"
+        },
+        "id": "champion:1:s1:lpl",
+        "day": 64,
+        "category": "Campeonatos",
+        "title": "TOP ESPORTS é campeão de Liga China",
+        "summary": "TOP ESPORTS conquista Liga China e leva o título regional.",
+        "competitionId": "s1:lpl",
+        "season": 1,
+        "organizationId": "top_esports",
+        "fixtureId": "s1:lpl:final:0"
+      },
+      {
+        "mode": "MOBA",
+        "origin": "champion",
+        "relevance": 100,
+        "content": "G2 Esports conquista Liga Europa e leva o título regional.",
+        "visual": {
+          "kind": "trophy",
+          "label": "Liga Europa",
+          "destination": "G2 Esports"
+        },
+        "id": "champion:1:s1:lec",
+        "day": 64,
+        "category": "Campeonatos",
+        "title": "G2 Esports é campeão de Liga Europa",
+        "summary": "G2 Esports conquista Liga Europa e leva o título regional.",
+        "competitionId": "s1:lec",
+        "season": 1,
+        "organizationId": "g2_esports",
+        "fixtureId": "s1:lec:final:0"
+      },
+      {
+        "mode": "MOBA",
+        "origin": "series",
+        "relevance": 90,
+        "content": "MVK Esports venceu Relove Deep Cross Gaming pela final de Liga Ásia-Pacífico.\n\nRelove Deep Cross Gaming 2 × 3 MVK Esports. Série melhor de 5.",
+        "visual": {
+          "kind": "match",
+          "label": "Liga Ásia-Pacífico",
+          "home": "Relove Deep Cross Gaming",
+          "away": "MVK Esports",
+          "homeOrganizationId": "relove_deep_cross_gaming",
+          "awayOrganizationId": "mvk_esports",
+          "score": [
+            2,
+            3
+          ]
+        },
+        "id": "series:s1:lcp:final:0",
+        "day": 64,
+        "category": "Campeonatos",
+        "title": "MVK Esports supera Relove Deep Cross Gaming em Liga Ásia-Pacífico",
+        "summary": "Relove Deep Cross Gaming 2 × 3 MVK Esports · MD5.",
+        "competitionId": "s1:lcp",
+        "season": 1,
+        "relatedOrganizationIds": [
+          "relove_deep_cross_gaming",
+          "mvk_esports"
+        ],
+        "organizationId": "mvk_esports",
+        "fixtureId": "s1:lcp:final:0"
+      },
+      {
+        "mode": "MOBA",
+        "origin": "series",
+        "relevance": 90,
+        "content": "TOP ESPORTS venceu LGD GAMING pela final de Liga China.\n\nLGD GAMING 1 × 3 TOP ESPORTS. Série melhor de 5.",
+        "visual": {
+          "kind": "match",
+          "label": "Liga China",
+          "home": "LGD GAMING",
+          "away": "TOP ESPORTS",
+          "homeOrganizationId": "lgd_gaming",
+          "awayOrganizationId": "top_esports",
+          "score": [
+            1,
+            3
+          ]
+        },
+        "id": "series:s1:lpl:final:0",
+        "day": 64,
+        "category": "Campeonatos",
+        "title": "TOP ESPORTS vence LGD GAMING pela final",
+        "summary": "LGD GAMING 1 × 3 TOP ESPORTS · MD5.",
+        "competitionId": "s1:lpl",
+        "season": 1,
+        "relatedOrganizationIds": [
+          "lgd_gaming",
+          "top_esports"
+        ],
+        "organizationId": "top_esports",
+        "fixtureId": "s1:lpl:final:0"
+      },
+      {
+        "mode": "MOBA",
+        "origin": "contract",
+        "relevance": 55,
+        "content": "Onyx40 assina com Aurora MOBA. A contratação está confirmada.",
+        "visual": {
+          "kind": "transfer",
+          "destination": "Aurora MOBA"
+        },
+        "id": "contract:1183:1",
+        "day": 1,
+        "category": "Mercado",
+        "title": "Onyx40 assina com Aurora MOBA",
+        "summary": "Onyx40 passa a integrar o elenco de Aurora MOBA.",
+        "relatedOrganizationIds": [
+          "career"
+        ],
+        "playerId": 1183,
+        "organizationId": "career"
+      },
+      {
+        "mode": "MOBA",
+        "origin": "contract",
+        "relevance": 55,
+        "content": "Aster40 assina com Aurora MOBA. A contratação está confirmada.",
+        "visual": {
+          "kind": "transfer",
+          "destination": "Aurora MOBA"
+        },
+        "id": "contract:1181:1",
+        "day": 1,
+        "category": "Mercado",
+        "title": "Aster40 assina com Aurora MOBA",
+        "summary": "Aster40 passa a integrar o elenco de Aurora MOBA.",
+        "relatedOrganizationIds": [
+          "career"
+        ],
+        "playerId": 1181,
+        "organizationId": "career"
+      },
+      {
+        "mode": "MOBA",
+        "origin": "contract",
+        "relevance": 55,
+        "content": "Nova36 assina com Aurora MOBA. A contratação está confirmada.",
+        "visual": {
+          "kind": "transfer",
+          "destination": "Aurora MOBA"
+        },
+        "id": "contract:1055:1",
+        "day": 1,
+        "category": "Mercado",
+        "title": "Nova36 assina com Aurora MOBA",
+        "summary": "Novo nome no elenco: Nova36 assina com Aurora MOBA.",
+        "relatedOrganizationIds": [
+          "career"
+        ],
+        "playerId": 1055,
+        "organizationId": "career"
+      },
+      {
+        "mode": "MOBA",
+        "origin": "round",
+        "relevance": 30,
+        "content": "MVK Esports 1 × 0 Ground Zero Gaming\n\nTeam Secret Whales 0 × 1 Relove Deep Cross Gaming\n\nGAM Esports 0 × 1 Fukuoka SoftBank HAWKS gaming\n\nDetonatioN FocusMe 0 × 1 CTBC Flying Oyster",
+        "visual": {
+          "kind": "match",
+          "label": "Liga Ásia-Pacífico"
+        },
+        "id": "round:s1:lcp:7:50",
+        "day": 50,
+        "category": "Campeonatos",
+        "title": "Liga Ásia-Pacífico: os resultados da rodada 7",
+        "summary": "4 confrontos concluídos na temporada regular.",
+        "competitionId": "s1:lcp",
+        "season": 1,
+        "relatedOrganizationIds": [
+          "ground_zero_gaming",
+          "mvk_esports",
+          "relove_deep_cross_gaming",
+          "team_secret_whales",
+          "fukuoka_softbank_hawks_gaming",
+          "gam_esports",
+          "ctbc_flying_oyster",
+          "detonation_focusme"
+        ]
+      },
+      {
+        "mode": "MOBA",
+        "origin": "round",
+        "relevance": 30,
+        "content": "TOP ESPORTS 1 × 0 BILIBILI GAMING\n\nShenzhen NINJAS IN PYJAMAS 1 × 0 Xi'an Team WE\n\nWeiboGaming 0 × 1 LGD GAMING\n\nInvictus Gaming 1 × 0 Anyone's Legend",
+        "visual": {
+          "kind": "match",
+          "label": "Liga China"
+        },
+        "id": "round:s1:lpl:7:50",
+        "day": 50,
+        "category": "Campeonatos",
+        "title": "Liga China: os resultados da rodada 7",
+        "summary": "4 confrontos concluídos na temporada regular.",
+        "competitionId": "s1:lpl",
+        "season": 1,
+        "relatedOrganizationIds": [
+          "bilibili_gaming",
+          "top_esports",
+          "xi_an_team_we",
+          "ninjas_in_pyjamas",
+          "lgd_gaming",
+          "weibo_gaming",
+          "anyone_s_legend",
+          "invictus_gaming"
+        ]
+      }
+    ]
+  },
+  {
+    "mode": "FPS",
+    "day": 206,
+    "total": 37,
+    "firstQueryMs": 178.0298000000039,
+    "repeatQueryMs": 157.08750000000146,
+    "categories": {
+      "categories": [
+        "Campeonatos",
+        "Mercado"
+      ],
+      "modes": [
+        "FPS"
+      ],
+      "organizations": [
+        "astralis",
+        "career",
+        "faze",
+        "legacy",
+        "luminosity",
+        "mibr",
+        "mouz",
+        "ninjas_in_pyjamas",
+        "pain_gaming",
+        "team_liquid",
+        "team_vitality"
+      ]
+    },
+    "examples": [
+      {
+        "mode": "FPS",
+        "origin": "champion",
+        "relevance": 100,
+        "content": "Luminosity conquista Major de Counter-Strike e leva o título major.",
+        "visual": {
+          "kind": "trophy",
+          "label": "Major de Counter-Strike",
+          "destination": "Luminosity"
+        },
+        "id": "champion:1:s1:cs_major",
+        "day": 190,
+        "category": "Campeonatos",
+        "title": "Luminosity é campeão de Major de Counter-Strike",
+        "summary": "Luminosity conquista Major de Counter-Strike e leva o título major.",
+        "competitionId": "s1:cs_major",
+        "season": 1,
+        "organizationId": "luminosity",
+        "fixtureId": "s1:cs_major:final:0"
+      },
+      {
+        "mode": "FPS",
+        "origin": "champion",
+        "relevance": 100,
+        "content": "Astralis conquista Liga Internacional CS2 e leva o título internacional.",
+        "visual": {
+          "kind": "trophy",
+          "label": "Liga Internacional CS2",
+          "destination": "Astralis"
+        },
+        "id": "champion:1:s1:cs_league",
+        "day": 134,
+        "category": "Campeonatos",
+        "title": "Astralis é campeão de Liga Internacional CS2",
+        "summary": "Astralis conquista Liga Internacional CS2 e leva o título internacional.",
+        "competitionId": "s1:cs_league",
+        "season": 1,
+        "organizationId": "astralis",
+        "fixtureId": "s1:cs_league:final:0"
+      },
+      {
+        "mode": "FPS",
+        "origin": "series",
+        "relevance": 90,
+        "content": "Luminosity venceu Astralis pela final de Major de Counter-Strike.\n\nAstralis 2 × 3 Luminosity. Série melhor de 5.",
+        "visual": {
+          "kind": "match",
+          "label": "Major de Counter-Strike",
+          "home": "Astralis",
+          "away": "Luminosity",
+          "homeOrganizationId": "astralis",
+          "awayOrganizationId": "luminosity",
+          "score": [
+            2,
+            3
+          ]
+        },
+        "id": "series:s1:cs_major:final:0",
+        "day": 190,
+        "category": "Campeonatos",
+        "title": "Luminosity vence Astralis pela final",
+        "summary": "Astralis 2 × 3 Luminosity · MD5.",
+        "competitionId": "s1:cs_major",
+        "season": 1,
+        "relatedOrganizationIds": [
+          "astralis",
+          "luminosity"
+        ],
+        "organizationId": "luminosity",
+        "fixtureId": "s1:cs_major:final:0"
+      },
+      {
+        "mode": "FPS",
+        "origin": "series",
+        "relevance": 65,
+        "content": "Luminosity venceu paiN pela semifinal de Major de Counter-Strike.\n\nLuminosity 2 × 0 paiN. Série melhor de 3.",
+        "visual": {
+          "kind": "match",
+          "label": "Major de Counter-Strike",
+          "home": "Luminosity",
+          "away": "paiN",
+          "homeOrganizationId": "luminosity",
+          "awayOrganizationId": "pain_gaming",
+          "score": [
+            2,
+            0
+          ]
+        },
+        "id": "series:s1:cs_major:semifinal:1",
+        "day": 183,
+        "category": "Campeonatos",
+        "title": "Luminosity supera paiN em Major de Counter-Strike",
+        "summary": "Luminosity 2 × 0 paiN · MD3.",
+        "competitionId": "s1:cs_major",
+        "season": 1,
+        "relatedOrganizationIds": [
+          "luminosity",
+          "pain_gaming"
+        ],
+        "organizationId": "luminosity",
+        "fixtureId": "s1:cs_major:semifinal:1"
+      },
+      {
+        "mode": "FPS",
+        "origin": "contract",
+        "relevance": 55,
+        "content": "Rune44 assina com Aurora FPS. A contratação está confirmada.",
+        "visual": {
+          "kind": "transfer",
+          "destination": "Aurora FPS"
+        },
+        "id": "contract:1308:1",
+        "day": 1,
+        "category": "Mercado",
+        "title": "Rune44 assina com Aurora FPS",
+        "summary": "Aurora FPS reforça seu elenco com a chegada de Rune44.",
+        "relatedOrganizationIds": [
+          "career"
+        ],
+        "playerId": 1308,
+        "organizationId": "career"
+      },
+      {
+        "mode": "FPS",
+        "origin": "contract",
+        "relevance": 55,
+        "content": "Frost14 assina com Aurora FPS. A contratação está confirmada.",
+        "visual": {
+          "kind": "transfer",
+          "destination": "Aurora FPS"
+        },
+        "id": "contract:399:1",
+        "day": 1,
+        "category": "Mercado",
+        "title": "Frost14 assina com Aurora FPS",
+        "summary": "Frost14 passa a integrar o elenco de Aurora FPS.",
+        "relatedOrganizationIds": [
+          "career"
+        ],
+        "playerId": 399,
+        "organizationId": "career"
+      },
+      {
+        "mode": "FPS",
+        "origin": "contract",
+        "relevance": 55,
+        "content": "Pulse11 assina com Aurora FPS. A contratação está confirmada.",
+        "visual": {
+          "kind": "transfer",
+          "destination": "Aurora FPS"
+        },
+        "id": "contract:316:1",
+        "day": 1,
+        "category": "Mercado",
+        "title": "Pulse11 assina com Aurora FPS",
+        "summary": "Novo nome no elenco: Pulse11 assina com Aurora FPS.",
+        "relatedOrganizationIds": [
+          "career"
+        ],
+        "playerId": 316,
+        "organizationId": "career"
+      }
+    ]
+  }
+]

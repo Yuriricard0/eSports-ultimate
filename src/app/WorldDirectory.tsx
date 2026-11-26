@@ -19,13 +19,13 @@ function ClubLogo({club}:{club:Organization}) {
     : <span className="monogram" title="Logo original pendente">{club.code}</span>;
 }
 
-export function WorldDirectory({catalog,players,view,onNavigate,career,contracts=[]}:{
+export function WorldDirectory({catalog,players,view,onNavigate,career,contracts=[],initialOrganizationId=''}:{
   catalog:WorldCatalog;players:Player[];view:'organizations'|'leagues';onNavigate:(view:string)=>void;
-  career?:Career|null;contracts?:Contract[];
+  career?:Career|null;contracts?:Contract[];initialOrganizationId?:string;
 }) {
   const [filter,setFilter]=useViewPreference(`${career?.id??'guest'}:${view}:filters`,defaults);
   const [page,setPage]=useState(0);
-  const [clubId,setClubId]=useState('');
+  const [clubId,setClubId]=useState(initialOrganizationId);
   const [teamId,setTeamId]=useState('');
   const [profileId,setProfileId]=useState<number|null>(null);
   const [showStrength,setShowStrength]=useState(false);

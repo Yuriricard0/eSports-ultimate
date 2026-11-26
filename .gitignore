@@ -2,3 +2,4 @@ node_modules/
 dist/
 .superpowers/
 *.log
+docs/qa/uem-news/*.png

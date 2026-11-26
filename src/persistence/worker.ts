@@ -1,4 +1,5 @@
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
+import {allocateSqliteBytes} from './sqlite-bytes';
 import {schema,careerInput,deleteCareer,validateSaveName,saveVersionSchema,type Career} from '../game-core/career';
 import {careerCreationVersion} from '../version';
 import {contractSchema,selectStarter,type Contract,type Player} from '../game-core/recruitment';
@@ -215,7 +216,7 @@ async function handleRequest(event:MessageEvent){
  const source=new sqlite.oo1.DB(':memory:');
  try{
    const {capi,wasm}=sqlite;
-   const ptr=wasm.allocFromTypedArray(bytes);
+   const ptr=allocateSqliteBytes(wasm,bytes);
    const rc=capi.sqlite3_deserialize(source.pointer!,'main',ptr,bytes.byteLength,bytes.byteLength,
      capi.SQLITE_DESERIALIZE_FREEONCLOSE|capi.SQLITE_DESERIALIZE_READONLY);
    if(rc!==capi.SQLITE_OK)throw Error('Não foi possível abrir a cópia SQLite.');

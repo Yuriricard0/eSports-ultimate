@@ -31,7 +31,8 @@ export function workerHarness(db:DatabaseSync,catalog:unknown,options:HarnessOpt
      if(!options.filePath)throw Error('Exportação de teste requer arquivo SQLite.');return new Uint8Array(readFileSync(options.filePath));
    }}),
    oo1:{DB:class {constructor(){return adapt(new DatabaseSync(':memory:'));}}},
-   wasm:{allocFromTypedArray(bytes:Uint8Array){buffers.set(++pointer,bytes);return pointer;}},
+   wasm:{alloc(size:number){buffers.set(++pointer,new Uint8Array(size));return pointer;},
+     heap8u:()=>({set(bytes:Uint8Array,offset:number){buffers.set(offset,bytes.slice());}})},
    capi:{SQLITE_OK:0,SQLITE_DESERIALIZE_FREEONCLOSE:1,SQLITE_DESERIALIZE_READONLY:2,
      sqlite3_deserialize(target:any,_name:string,id:number){target.deserialize(buffers.get(id)!);buffers.delete(id);return 0;}},
  };

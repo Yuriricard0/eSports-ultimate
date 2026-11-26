@@ -6,9 +6,9 @@ import {listCompetitions,saveCompetitionConfig,startCompetitionSeason,type Compe
 import {money} from './Players';
 
 const phases={regular:'Temporada regular',quarterfinal:'Quartas de final',semifinal:'Semifinais',final:'Final'};
-export function Competitions({career,onOpenFixture}:{career:Career;onOpenFixture:(id:string)=>void}){
+export function Competitions({career,onOpenFixture,initialEditionId='',initialSeason=0}:{career:Career;onOpenFixture:(id:string)=>void;initialEditionId?:string;initialSeason?:number}){
  const [state,setState]=useState<CompetitionState|null>(null),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);
- const [year,setYear]=useState(0),[editionId,setEdition]=useState('');
+ const [year,setYear]=useState(initialSeason),[editionId,setEdition]=useState(initialEditionId);
  useEffect(()=>{let active=true;listCompetitions(career.id).then(data=>{if(active)setState(data);}).catch(reason=>{if(active)setError(String(reason));});return()=>{active=false;};},[career]);
  const season=state?.seasons.find(s=>s.number===year)??state?.seasons[0];
  const edition=season?.editions.find(e=>e.id===editionId)??season?.editions.find(e=>e.participants.some(p=>p.id==='career'))??season?.editions[0];

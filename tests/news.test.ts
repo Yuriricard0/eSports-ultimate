@@ -11,6 +11,46 @@ import {departPlayer,renewContract} from '../src/game-core/market.ts';
 import {newsSchema,synchronizeNews,listNews,recordNews,processMoodEvent,recordDevelopmentNews,currentPlayerSituation} from '../src/game-core/news.ts';
 import {definitions} from '../src/game-core/attributes.ts';
 
+test('portal pesquisa conteúdo, respeita modalidade histórica e preserva registros legados',()=>{
+ const {db,run,read,all}=setup();
+ try{
+   const legacy={id:'legacy',day:1,category:'Mercado' as const,title:'Registro antigo',summary:'Dados verificáveis'};
+   recordNews(run,read,'a',legacy);
+   recordNews(run,read,'a',{id:'snapshot',day:2,category:'Mercado',title:'Nyx assina',summary:'Transferência confirmada',content:'Sai da Aurora e chega à Rival.',mode:'FPS',organizationId:'rival',relatedOrganizationIds:['career','rival']});
+   const result=listNews(read,all,'a',{mode:'FPS',query:'chega',organizationId:'career',channel:'public'},[player]);
+   assert.deepEqual(result.items.map(n=>n.id),['snapshot']);
+   assert.deepEqual(listNews(read,all,'a',{query:'antigo'}).items,[legacy]);
+   assert.equal(recordNews(run,read,'a',{...legacy,title:'Não deve substituir'}),false);
+   assert.equal(listNews(read,all,'a',{query:'antigo'}).items[0].title,legacy.title);
+   assert.ok(result.available.categories.includes('Mercado'));
+ }finally{db.close();}
+});
+
+test('notícias públicas não expõem moral, treino ou potencial, inclusive em saves antigos',()=>{
+ const {db,run,read,all}=setup();
+ try{
+   for(const id of ['mood:7','growth:7:8','prospect:9'])recordNews(run,read,'a',{id,day:8,category:'Jogadores',title:'Interno',summary:'Informação reservada'});
+   recordNews(run,read,'a',{id:'retired:7',day:8,category:'Jogadores',title:'Nyx encerra a carreira',summary:'Aposentadoria'});
+   assert.equal(listNews(read,all,'a',{channel:'public'}).total,1);
+   assert.equal(listNews(read,all,'a',{channel:'messages'}).total,3);
+   assert.equal(listNews(read,all,'a',{}).total,4);
+ }finally{db.close();}
+});
+
+test('volume, relevância e paginação não duplicam nem perdem acontecimentos',()=>{
+ const {db,run,read,all}=setup();
+ try{
+   run('UPDATE careers SET day=1000');
+   for(let i=0;i<1000;i++)recordNews(run,read,'a',{id:'bulk:'+i,day:1+i,category:'Mercado',title:'Notícia '+i,summary:'Confirmada',relevance:i===970?100:20});
+   assert.equal(listNews(read,all,'a',{page:19,pageSize:50,channel:'public'}).items.length,50);
+   assert.equal(listNews(read,all,'a',{page:20,pageSize:50}).items.length,0);
+   assert.equal(listNews(read,all,'a',{order:'relevance',pageSize:3}).items[0].id,'bulk:970');
+   const portal=listNews(read,all,'a',{includeHighlights:true,pageSize:20});
+   assert.equal(portal.highlights?.[0].id,'bulk:970');
+   assert.equal(portal.items[0].id,'bulk:999');
+ }finally{db.close();}
+});
+
 const player:Player={id:7,nickname:'Nyx',name:'Nyx Silva',mode:'MOBA',role:'top',overall:50,organization:null,team:null,country:'BR',birthDay:-6900,portraitIndex:0,estimateLow:70,estimateHigh:80,ceiling:80,attributes:Object.fromEntries(definitions.MOBA.map(key=>['moba_'+key,50]))};
 const career:Career={id:'a',name:'Aurora',code:'AUR',country:'BR',mode:'MOBA',difficulty:'Normal',balance:100000000,color:'#ef123b',symbol:'animals_wolf',created:'2026',day:1};
 const catalog={organizations:[],teams:[],leagues:[]};
@@ -83,4 +123,71 @@ test('recontratação livre não reutiliza o vendedor de uma negociação antiga
  const news=listNews(read,all,'a',{}).items;
  assert.ok(news.find(n=>n.id==='contract:7:1')!.title.includes('transferido'));
  assert.ok(news.find(n=>n.id==='contract:7:2')!.title.includes('assina'));db.close();
+});
+
+test('contratação guarda contexto, texto estável e modalidade mesmo após mudança de clube',()=>{
+ const {db,run,read,all}=setup();
+ try{
+   hire(run,read,'a',player);synchronizeNews(run,read,all,career,[player],catalog);
+   const original=listNews(read,all,'a',{}).items[0];
+   assert.equal(original.mode,'MOBA');assert.equal(original.visual?.destination,'Aurora');
+   assert.ok(original.content);assert.ok(original.origin);assert.ok(original.relevance!>0);
+   assert.ok(!original.summary.includes('registrado na carreira'));
+   synchronizeNews(run,read,all,{...career,day:20,name:'Outro nome'},[{...player,organization:'rival',nickname:'Novo nome'}],catalog);
+   assert.deepEqual(listNews(read,all,'a',{}).items[0],original);
+ }finally{db.close();}
+});
+
+test('potencial e métricas internas são mensagens; aposentadoria é pública',()=>{
+ const {db,run,read,all}=setup();
+ try{
+   recordDevelopmentNews(run,read,career,[player],[{...player,overall:52}],2,new Set([7]));
+   recordDevelopmentNews(run,read,career,[],[{...player,id:9,status:'ranked',estimateLow:90,estimateHigh:95}],2,new Set());
+   recordDevelopmentNews(run,read,career,[player],[{...player,status:'retired',retiredDay:2}],2,new Set());
+   const publicNews=listNews(read,all,'a',{channel:'public'});
+   assert.deepEqual(publicNews.items.map(n=>n.id),['retired:7']);
+   assert.ok(listNews(read,all,'a',{channel:'messages'}).items.every(n=>n.channel==='messages'));
+ }finally{db.close();}
+});
+
+test('rodada do cenário agrupa placares reais por data sem duplicar jogos da carreira',()=>{
+ const {db,run,read,all}=setup();
+ try{
+   const participants=['a','b','career','d'].map(id=>({id,organization:id,name:id.toUpperCase(),reputation:50}));
+   const result={winner:'a',score:[1,0],completedDay:8,maps:[]};
+   const fixtures=[{id:'world',home:'a',away:'b',round:1,phase:'regular',bestOf:1,result},{id:'own',home:'career',away:'d',round:1,phase:'regular',bestOf:1,result:{...result,winner:'career'}}];
+   run('INSERT INTO web_competition_seasons VALUES(?,?,?)',['a',1,JSON.stringify({number:1,editions:[{id:'s1:br',name:'Liga Brasil',mode:'MOBA',participants,fixtures}]})]);
+   synchronizeNews(run,read,all,{...career,day:8},[],catalog);
+   const initial=listNews(read,all,'a',{channel:'public'});
+   const round=initial.items.find(n=>n.id.startsWith('round:'))!;
+   assert.ok(round.content?.includes('A 1 × 0 B'));assert.equal(round.day,8);
+   assert.ok(!round.content?.includes('CAREER'));assert.equal(initial.items.filter(n=>n.id.startsWith('series:')).length,1);
+   assert.ok(listNews(read,all,'a',{organizationId:'b'}).items.some(n=>n.id===round.id));
+   assert.ok(initial.available.organizations.includes('b'));
+   assert.equal(listNews(read,all,'a',{scope:'world'}).total,1);
+   synchronizeNews(run,read,all,{...career,day:8},[],catalog);
+   assert.deepEqual(listNews(read,all,'a',{channel:'public'}),initial);
+ }finally{db.close();}
+});
+
+test('pesquisa reconhece letras maiúsculas acentuadas do título e do conteúdo',()=>{
+ const {db,run,read,all}=setup();
+ try{
+   recordNews(run,read,'a',{id:'accent',day:2,category:'Mercado',title:'ÁGUIAS reforça elenco',summary:'Assinatura',content:'Ótima estreia'});
+   assert.equal(listNews(read,all,'a',{query:'águias'}).total,1);
+   assert.equal(listNews(read,all,'a',{query:'ÓTIMA'}).total,1);
+ }finally{db.close();}
+});
+
+test('títulos usam modelos editoriais variados, determinísticos e apenas dados do evento',()=>{
+ const {db,run,read,all}=setup();
+ try{
+   for(let i=0;i<8;i++)run('INSERT INTO web_competition_awards VALUES(?,?,?,?,?,?,?,?,?,?,?)',['a',1,'cup:'+i,'winner','career',8,'Copa '+i,'MOBA','Regional',1000,2]);
+   synchronizeNews(run,read,all,{...career,day:8},[],catalog);
+   const first=listNews(read,all,'a',{channel:'public'});
+   assert.ok(new Set(first.items.map(n=>n.title.replace(/Copa \d/g,'Copa'))).size>1);
+   assert.ok(first.items.every(n=>n.content?.includes('Aurora')&&!n.content.includes('undefined')));
+   synchronizeNews(run,read,all,{...career,day:8},[],catalog);
+   assert.deepEqual(listNews(read,all,'a',{channel:'public'}),first);
+ }finally{db.close();}
 });
