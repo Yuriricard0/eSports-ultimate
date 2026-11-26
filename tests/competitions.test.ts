@@ -81,3 +81,73 @@ test('desempate usa confronto entre empatados antes do ID e é estável',()=>{
  edition.fixtures=[['z','a'],['z','c'],['d','z'],['a','c'],['a','d'],['c','d']].map(([home,away],index)=>({id:'tie'+index,competitionId:edition.id,season:1,day:1,home,away,phase:'regular',round:1,bestOf:1,status:'completed',result:{winner:home,score:[1,0],maps:[],completedDay:1}}));
  const rows=standings(edition);assert.equal(rows[0].team,'z');assert.equal(rows[1].team,'a');assert.deepEqual(standings(edition),rows);
 });
+import {startingEntry} from '../src/game-core/entry.ts';
+import {careerCreationVersion} from '../src/version.ts';
+
+test('novas carreiras disputam só a entrada, sem vaga automática na elite',()=>{
+ for(const mode of ['MOBA','FPS'] as const){
+   const f=fixture(mode);
+   f.career.createdVersion=careerCreationVersion;
+   f.career.entry=startingEntry(catalog,'BR',mode);
+   const season=generateSeason(f.career,catalog,f.players,f.contracts,1,1);
+   assert.deepEqual(season.editions.filter(e=>e.participants.some(p=>p.id==='career')).map(e=>e.key),
+     [mode==='FPS'?'cs_regional':'circuito_desafiante']);
+   validateCalendar(season);
+ }
+});
+test('Major usa o corte de oito posições e aceita um vice regional bem classificado',()=>{
+ const f=fixture('FPS');
+ f.career.createdVersion=careerCreationVersion;
+ f.career.entry=startingEntry(catalog,'BR','FPS');
+ const first=generateSeason(f.career,catalog,f.players,f.contracts,1,1);
+ for(const edition of first.editions){
+   if(edition.key==='cs_major')continue;
+   edition.finalOrder=edition.participants.map(p=>p.id);
+   edition.champion=edition.finalOrder[0];
+ }
+ const next=()=>generateSeason(f.career,catalog,f.players,f.contracts,2,366,undefined,{},first);
+ const major=(season:Season)=>season.editions.find(e=>e.key==='cs_major')!;
+ assert.ok(!major(next()).participants.some(p=>p.id==='career'));
+ const regional=first.editions.find(e=>e.key==='cs_regional')!;
+ // Second place is enough here because the resulting score puts Aurora above the cutoff.
+ regional.finalOrder.splice(1,0,regional.finalOrder.pop()!);
+ const qualified=next();
+ assert.ok(qualified.fpsRanking!.findIndex(p=>p.organization==='career')<8);
+ assert.ok(major(qualified).participants.some(p=>p.id==='career'));
+ assert.equal(new Set(major(qualified).participants.map(p=>p.organization)).size,8);
+});
+
+test('título da divisão de entrada dá acesso à elite na temporada seguinte',()=>{
+ const f=fixture('MOBA');
+ f.career.createdVersion=careerCreationVersion;
+ f.career.entry=startingEntry(catalog,'BR','MOBA');
+ const first=generateSeason(f.career,catalog,f.players,f.contracts,1,1);
+ const entry=first.editions.find(e=>e.key===f.career.entry!.leagueId)!;
+ assert.ok(!entry.participants.some(p=>p.id===f.career.entry!.displacedTeamId));
+ const next=()=>generateSeason(f.career,catalog,f.players,f.contracts,2,366,undefined,{},first);
+ assert.ok(!next().editions.find(e=>e.key==='cblol')!.participants.some(p=>p.id==='career'));
+ entry.champion='career';
+ assert.ok(next().editions.find(e=>e.key==='cblol')!.participants.some(p=>p.id==='career'));
+});
+test('regiões e dificuldades diferentes respeitam a entrada do catálogo',()=>{
+ for(const [country,difficulty] of [['DE','Difícil'],['US','Fácil'],['KR','Realista'],['CN','Normal']]){
+   for(const mode of ['MOBA','FPS'] as const){
+     const f=fixture(mode);
+     Object.assign(f.career,{country,difficulty,createdVersion:careerCreationVersion,entry:startingEntry(catalog,country,mode)});
+     const season=generateSeason(f.career,catalog,f.players,f.contracts,1,1);
+     const entries=season.editions.filter(e=>e.participants.some(p=>p.id==='career'));
+     assert.deepEqual(entries.map(e=>e.key),[mode==='FPS'?'cs_regional':f.career.entry!.leagueId]);
+     assert.equal(new Set(entries[0].participants.map(p=>p.organization)).size,entries[0].participants.length);
+     validateCalendar(season);
+   }
+ }
+});
+test('catálogo com poucos rivais elegíveis não concede vaga na elite',()=>{
+ for(const mode of ['MOBA','FPS'] as const){
+   const f=fixture(mode);
+   f.career.createdVersion=careerCreationVersion;
+   const entry=f.career.entry=startingEntry(catalog,'BR',mode);
+   const incomplete={...catalog,teams:catalog.teams.filter(team=>team.league!==entry.leagueId||team.id===entry.displacedTeamId)};
+   assert.throws(()=>generateSeason(f.career,incomplete,f.players,f.contracts,1,1),/faltam equipes elegíveis/);
+ }
+});

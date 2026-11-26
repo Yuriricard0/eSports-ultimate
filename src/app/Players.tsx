@@ -1,7 +1,9 @@
 import {MarketNegotiations} from './MarketNegotiations';
+import {listIncomingApproaches} from '../persistence/repository';
+import type {Approach} from '../game-core/market-interest';
 import {RosterContracts} from './RosterContracts';
 import {transferValue} from '../game-core/market';
-import {useState} from 'react';
+import {useEffect,useState} from 'react';
 import {PlayerPortrait} from './PlayerPortrait';
 import {PlayerProfilePanel} from './PlayerProfilePanel';
 import {attributeLabels,roleNames} from './player-labels';
@@ -39,6 +41,14 @@ export function Players({career,players,contracts,organizations,view,onFinish,on
   const [page,setPage]=useState(0);
   const [offer,setOffer]=useState<Player|null>(null);
   const [busy,setBusy]=useState(false);
+  const [incoming,setIncoming]=useState<Approach[]>([]);
+  const [incomingRevision,setIncomingRevision]=useState(0);
+  useEffect(()=>{
+    if(view!=='roster')return;
+    let active=true;
+    listIncomingApproaches(career.id).then(rows=>{if(active)setIncoming(rows);}).catch(()=>{if(active)setIncoming([]);});
+    return()=>{active=false;};
+  },[view,career,incomingRevision]);
   const rankedView=view==='ranked';
   const [mode,setMode]=useViewPreference(scope+'mode',rankedView||view==='market'?career.mode:'');
   const [contractAction,setContractAction]=useState<{player:Player;action:'renew'|'sell'|'release'}|null>(null);
@@ -143,9 +153,18 @@ export function Players({career,players,contracts,organizations,view,onFinish,on
       </table></div>
     </section>}
     {view==='market'&&<MarketNegotiations career={career} players={players} draft={offer} onClearDraft={()=>setOffer(null)} onFinish={onFinish}/>}
+    {view==='roster'&&incoming.length>0&&<section className="panel" aria-label="Propostas recebidas">
+      <h2>Propostas recebidas</h2>
+      {incoming.map(row=>{
+        const athlete=players.find(player=>player.id===row.playerId);
+        return athlete&&byPlayer.has(athlete.id)?<button key={row.organization+':'+row.playerId} onClick={()=>setContractAction({player:athlete,action:'sell'})}>
+          {row.name} quer contratar {athlete.nickname} · {money(row.fee)}
+        </button>:null;
+      })}
+    </section>}
     {view==='roster'&&contractAction&&byPlayer.has(contractAction.player.id)&&<RosterContracts key={contractAction.player.id+contractAction.action}
       career={career} player={contractAction.player} contract={byPlayer.get(contractAction.player.id)!} action={contractAction.action}
-      onClose={()=>setContractAction(null)} onUpdated={onUpdated}/>}
+      onClose={()=>{setContractAction(null);setIncomingRevision(value=>value+1);}} onUpdated={onUpdated}/>}
     <p className="muted">{filtered.length} jogadores encontrados</p>
     <div className="player-list">
       {filtered.slice(activePage*pageSize,activePage*pageSize+pageSize).map(player=>{

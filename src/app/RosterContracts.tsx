@@ -3,7 +3,7 @@ import type {Career} from '../game-core/career';
 import type {Contract,Player} from '../game-core/recruitment';
 import type {SaleOption} from '../game-core/market';
 import {formatCareerDay} from '../game-core/calendar';
-import {leaveRoster,listSaleOptions,renewPlayerContract} from '../persistence/repository';
+import {declineApproach,leaveRoster,listSaleOptions,renewPlayerContract} from '../persistence/repository';
 
 const money=(value:number)=>'$ '+(value/100).toLocaleString('pt-BR');
 export function RosterContracts({career,player,contract,action,onClose,onUpdated}:{
@@ -27,7 +27,7 @@ export function RosterContracts({career,player,contract,action,onClose,onUpdated
  };
  return <section className="panel" aria-label="Gerenciar contrato">
    <div className="players-heading"><h2>{action==='renew'?'Renovar contrato':action==='sell'?'Propostas de compra':'Dispensar jogador'} · {player.nickname}</h2>
-     <button disabled={busy} onClick={onClose}>{action==='sell'?'Recusar propostas e fechar':'Cancelar'}</button></div>
+     <button disabled={busy} onClick={onClose}>{action==='sell'?'Fechar':'Cancelar'}</button></div>
    {error&&<p role="alert">{error}</p>}
    {action==='renew'&&<form onSubmit={event=>{event.preventDefault();void execute(()=>renewPlayerContract(career.id,player.id,Math.round(Number(salary)*100),days));}}>
      <p>Vínculo atual até {formatCareerDay(contract.end_day)}. A renovação acrescenta dias a esse prazo.</p>
@@ -42,7 +42,12 @@ export function RosterContracts({career,player,contract,action,onClose,onUpdated
      <p>Aceite uma proposta para concluir a venda. O valor entra no caixa e o salário trabalhado é acertado na saída.</p>
      {offers===null&&!error&&<p role="status">Buscando clubes interessados…</p>}
      {offers?.length===0&&<p>Nenhum clube interessado neste momento.</p>}
-     <div className="market-offers">{offers?.map(offer=><article key={offer.team}><h3>{offer.name}</h3><p>Oferta: {money(offer.fee)}</p>
+     <div className="market-offers">{offers?.map(offer=><article key={offer.team}><h3>{offer.name}</h3><p>{'expires' in offer?'Proposta espontânea':'Cotação solicitada'} · {money(offer.fee)}</p>
+       {'expires' in offer&&<button disabled={busy} onClick={async()=>{
+         setBusy(true);setError('');
+         try{await declineApproach(career.id,player.id,offer.team);setOffers(rows=>rows?.filter(row=>row.team!==offer.team)??null);}
+         catch(reason){setError(String(reason));}finally{setBusy(false);}
+       }}>Recusar proposta</button>}
        <button className="primary" disabled={busy} onClick={()=>void execute(()=>leaveRoster(career.id,player.id,offer.team))}>Aceitar e vender</button>
      </article>)}</div>
    </>}

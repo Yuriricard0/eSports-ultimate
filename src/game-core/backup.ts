@@ -26,6 +26,8 @@ const tables={
   web_transfer_quotes:['career_id','negotiation_id','organization','team','fee'],
   web_contract_closures:['career_id','player_id','start_day','day','reason'],
   web_salary_rates:['career_id','player_id','start_day','day','salary'],
+  web_ai_market_days:['career_id','day'],
+  web_ai_approaches:['career_id','day','buyer','player_id','data'],
   web_market_moves:['career_id','player_id','day','kind','amount','description'],
   web_imported_players:['career_id','player_id','data','member','starter'],
   web_player_training:['career_id','player_id','academy','focus','changed_day'],

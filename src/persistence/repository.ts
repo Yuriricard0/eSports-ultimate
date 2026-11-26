@@ -97,3 +97,6 @@ export const listPlayerMilestones=(careerId:string,playerId:number)=>request<Pla
 export const listPayroll=(careerId:string)=>request<PayrollEntry[]>('calendar',careerId);
 export const advanceDays=(careerId:string,expectedDay:number,days:number)=>
  request<{report:CalendarResult;career:Career}>('advance',{careerId,expectedDay,days});
+
+export const listIncomingApproaches=(careerId:string)=>request<import('../game-core/market-interest').Approach[]>('incoming-approaches',careerId);
+export const declineApproach=(careerId:string,playerId:number,team:string)=>trackSave(()=>request<boolean>('decline-approach',{careerId,playerId,team}));

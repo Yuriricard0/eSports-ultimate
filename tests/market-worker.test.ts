@@ -68,3 +68,24 @@ test('operações reais do worker preservam duas compras simultâneas e sobreviv
    rmSync(dir,{recursive:true,force:true});
  }
 });
+test('ciclo de mercado é único por dia e a recusa sobrevive à recarga',async()=>{
+ const db=new DatabaseSync(':memory:');
+ try{
+   db.exec(schema+contractSchema);migrateCalendar(sql=>db.exec(sql),1);db.exec(phaseOneSchema+negotiationSchema);
+   db.exec("INSERT INTO careers VALUES('a','Aurora','AUR','BR','MOBA','Normal',100000000,'#aabbcc','animals_wolf','2026',1)");
+   db.prepare('INSERT INTO web_career_world VALUES(?,?,?,?)').run('a',42,generationVersion,JSON.stringify(players));
+   const request=workerHarness(db,catalog);
+   await request('submit-offer',{careerId:'a',playerId:20,offer:terms(40)});
+   const negotiation=(await request('negotiations','a'))[0];
+   await request('confirm-offer',{careerId:'a',id:negotiation.id});
+   await request('advance',{careerId:'a',expectedDay:1,days:7});
+   await assert.rejects(()=>request('advance',{careerId:'a',expectedDay:1,days:7}));
+   assert.equal(db.prepare('SELECT COUNT(*) count FROM web_ai_market_days').get()!.count,1);
+   const data={organization:'rival',team:'team',name:'Rival',fee:20000,day:8,expires:22,seller:'career',role:'top',playerId:20,state:'open'};
+   db.prepare('INSERT INTO web_ai_approaches VALUES(?,?,?,?,?)').run('a',8,'rival',20,JSON.stringify(data));
+   assert.equal((await request('incoming-approaches','a')).length,1);
+   await request('decline-approach',{careerId:'a',playerId:20,team:'team'});
+   assert.equal((await workerHarness(db,catalog)('incoming-approaches','a')).length,0);
+   assert.equal(JSON.parse(String(db.prepare('SELECT data FROM web_ai_approaches WHERE day=8').get()!.data)).state,'declined');
+ }finally{db.close();}
+});

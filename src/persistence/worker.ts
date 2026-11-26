@@ -1,3 +1,4 @@
+import {approachSchema,competitiveEvidence,marketApproaches,marketInterest,marketLimits,type Approach} from '../game-core/market-interest';
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 import {allocateSqliteBytes} from './sqlite-bytes';
 import {schema,careerInput,deleteCareer,validateSaveName,saveVersionSchema,type Career} from '../game-core/career';
@@ -88,7 +89,7 @@ const initialized=(async()=>{
  if(/CHECK\s*\(\s*bonus\s*>\s*0\s*\)/i.test(String(db.selectValue("SELECT sql FROM sqlite_schema WHERE name='web_contracts'")))){
    migrateZeroSigningBonus(sql=>{db.exec(sql);});
  }
- db.exec(contractSchema+phaseOneSchema+negotiationSchema+matchSchema+competitionSchema+newsSchema+saveVersionSchema+favoriteLineupSchema);
+ db.exec(contractSchema+phaseOneSchema+negotiationSchema+matchSchema+competitionSchema+newsSchema+saveVersionSchema+favoriteLineupSchema+approachSchema);
  db.transaction(()=>{
    for(const row of db.selectObjects('SELECT id FROM careers'))initializeFinance((sql,bind)=>{db.exec({sql,bind});},(sql,bind)=>db.selectObject(sql,bind),(sql,bind)=>db.selectObjects(sql,bind),String(row.id));
    db.exec('PRAGMA user_version=10;');
@@ -135,6 +136,34 @@ async function handleRequest(event:MessageEvent){
    players=players.map(player=>withPersonalObjective(player,day));
    run('UPDATE web_career_world SET players=? WHERE career_id=?',[JSON.stringify(players.filter(p=>p.id>=0)),careerId]);
    for(const player of players.filter(p=>p.id<0))run('UPDATE web_imported_players SET data=? WHERE career_id=? AND player_id=?',[JSON.stringify(player),careerId,player.id]);
+ };
+ const approaches=(careerId:string,day:number,playerId?:number)=>{
+   const rows=all('SELECT data FROM web_ai_approaches WHERE career_id=? AND day>=?'+(playerId===undefined?'':' AND player_id=?')+' ORDER BY day DESC,buyer',
+     playerId===undefined?[careerId,day-marketLimits.refused]:[careerId,day-marketLimits.refused,playerId]);
+   return rows.map(row=>JSON.parse(String(row.data)) as Approach);
+ };
+ const setApproach=(careerId:string,offer:Approach,state:Approach['state'])=>{
+   run('UPDATE web_ai_approaches SET data=? WHERE career_id=? AND day=? AND buyer=? AND player_id=?',
+     [JSON.stringify({...offer,state}),careerId,offer.day,offer.organization,offer.playerId]);
+ };
+ const offersFor=(id:string,day:number,player:Player,catalog:WorldCatalog,players:Player[],requested=true)=>{
+   const history=approaches(id,day,player.id);
+   const open=history.filter(offer=>offer.seller==='career'&&offer.state==='open'&&offer.expires>=day);
+   if(!requested||open.length)return open;
+   if(read("SELECT 1 FROM web_negotiations WHERE career_id=? AND player_id=? AND expires_day>=? AND state IN ('accepted','counter')",[id,player.id,day]))return [];
+
+   const evidence=competitiveEvidence(latestSeason(read,id),day).get(player.id);
+   const quotes=saleOptions(player,catalog,players,(org,fee)=>aiCanBuy(read,id,org,player,fee));
+   const buyers=new Set<string>();
+   return quotes.filter(quote=>{
+     const org=catalog.organizations.find(org=>org.id===quote.organization)!;
+     const team=catalog.teams.find(team=>team.id===quote.team)!;
+     const rival=players.filter(p=>p.id!==player.id&&p.team===team.id&&p.role===player.role&&p.status!=='retired');
+     const incumbent=rival.length?Math.max(...rival.map(p=>p.overall))-3:undefined;
+     if(buyers.has(org.id)||!marketInterest(player,{reputation:org.reputation,academy:team.academy},incumbent,day,evidence,true)||
+       history.some(row=>row.organization===org.id&&row.state==='declined'&&day-row.day<marketLimits.refused))return false;
+     buyers.add(org.id);return true;
+   }).slice(0,marketLimits.athlete);
  };
  const matchContext=async(careerId:string,opponentId:string)=>{
    const current=get(careerId);
@@ -351,7 +380,7 @@ async function handleRequest(event:MessageEvent){
  const old=latestSeason(read,input),players=await marketPlayers(input),catalog=await loadWorld();
  const config=JSON.parse(String(read('SELECT data FROM web_competition_config WHERE career_id=?',[input])?.data??JSON.stringify(defaultCompetitionConfig)));
  const bonuses=Object.fromEntries(all('SELECT organization,SUM(reputation) gain FROM web_competition_awards WHERE career_id=? GROUP BY organization',[input]).map(row=>[String(row.organization),Number(row.gain)]));
- const season=generateSeason(current,catalog,players,contractsFor(input),(old?.number??0)+1,nextSeasonStart(old,current.day),config,bonuses);
+ const season=generateSeason(current,catalog,players,contractsFor(input),(old?.number??0)+1,nextSeasonStart(old,current.day),config,bonuses,old);
  storeNewSeason(run,read,input,season);result=season;
  }else if(action==='play-competition'){
  const season=latestSeason(read,input.careerId),current=get(input.careerId)!;
@@ -461,6 +490,30 @@ async function handleRequest(event:MessageEvent){
        players=maintainRosters(players,marketCatalog,protectedIds,day,aiHiring(input.careerId,day));
        players=processAI(competition,day,players,input.careerId,protectedIds,seed);
      }
+     if(day%marketLimits.interval===0&&!read('SELECT 1 FROM web_ai_market_days WHERE career_id=? AND day=?',[input.careerId,day])){
+       const id=input.careerId;
+       run('INSERT INTO web_ai_market_days VALUES(?,?)',[id,day]);
+       const owners=new Map([...protectedIds].map(playerId=>[playerId,(contracts.find(c=>c.player_id===playerId&&c.end_day>=day)?.end_day??day+365)-day]));
+       const blocked=new Set(all("SELECT player_id FROM web_negotiations WHERE career_id=? AND expires_day>=? AND state IN ('accepted','counter')",[id,day]).map(row=>Number(row.player_id)));
+       const bids=marketApproaches(players,marketCatalog,owners,competitiveEvidence(competition,day),approaches(id,day),seed,day,
+         (org,player,fee)=>aiCanBuy(read,id,org,player,fee),marketLimits,blocked);
+       const indexed=new Map(players.map(player=>[player.id,player]));
+       const signed=new Map<number,Approach>();
+       for(const bid of bids){
+         const athlete=indexed.get(bid.playerId)!;
+         const covered=players.some(player=>player.id!==athlete.id&&!signed.has(player.id)&&player.team===athlete.team&&player.role===athlete.role&&!player.status);
+         if(bid.seller!=='career'&&covered&&aiCanBuy(read,id,bid.organization,athlete,bid.fee)){
+           aiPurchase(run,read,id,bid.organization,athlete,bid.fee,day);
+           aiReceiveTransfer(run,id,bid.seller,athlete,bid.fee,'ai:'+bid.organization+':'+athlete.id+':'+day,day);
+           bid.state='signed';signed.set(athlete.id,bid);
+         }else if(bid.seller!=='career')bid.state='declined';
+         run('INSERT INTO web_ai_approaches VALUES(?,?,?,?,?)',[id,day,bid.organization,bid.playerId,JSON.stringify(bid)]);
+       }
+       if(signed.size)players=players.map(player=>{
+         const bid=signed.get(player.id);
+         return bid?{...player,organization:bid.organization,team:bid.team,history:[{day,description:'Transferido para '+bid.name+'.'},...(player.history??[])]}:player;
+       });
+     }
    }
    const owned=ownedIds(input.careerId);
    players=maintainRosters(players,marketCatalog,owned,to,aiHiring(input.careerId,to));
@@ -478,7 +531,15 @@ async function handleRequest(event:MessageEvent){
  const players=await marketPlayers(input.careerId);
  const player=players.find(p=>p.id===input.playerId);
  if(!player||!ownedIds(input.careerId).has(player.id))throw Error('O atleta não faz parte deste elenco.');
- result=saleOptions(player,await loadWorld(),players,(organization,fee)=>aiCanBuy(read,input.careerId,organization,player,fee));
+ result=offersFor(input.careerId,get(input.careerId)!.day,player,await loadWorld(),players);
+ }else if(action==='incoming-approaches'){
+ const day=get(input)!.day,owned=ownedIds(input);
+ result=approaches(input,day).filter(row=>row.seller==='career'&&row.state==='open'&&row.expires>=day&&owned.has(row.playerId));
+ }else if(action==='decline-approach'){
+ const day=get(input.careerId)!.day;
+ const offer=approaches(input.careerId,day,input.playerId).find(row=>row.team===input.team&&row.seller==='career'&&row.state==='open'&&row.expires>=day);
+ if(!offer)throw Error('Proposta indisponível.');
+ setApproach(input.careerId,offer,'declined');result=true;
  }else if(action==='market-moves'){
  result=all('SELECT player_id,day,kind,amount,description FROM web_market_moves WHERE career_id=? ORDER BY day DESC,rowid DESC LIMIT 100',[input]);
  }else if(action==='renew-contract'){
@@ -488,10 +549,16 @@ async function handleRequest(event:MessageEvent){
  const players=await marketPlayers(input.careerId),catalog=await loadWorld();
  const player=players.find(p=>p.id===input.playerId);
  if(!player)throw Error('Atleta não encontrado.');
- const buyer=input.team?saleOptions(player,catalog,players).find(option=>option.team===input.team):undefined;
+ const buyer=input.team?offersFor(input.careerId,get(input.careerId)!.day,player,catalog,players).find(option=>option.team===input.team):undefined;
  if(input.team&&!buyer)throw Error('A proposta de compra não está mais disponível.');
  departPlayer(run,read,all,input.careerId,player,buyer,day=>{
-   if(buyer)aiPurchase(run,read,input.careerId,buyer.organization,player,buyer.fee,day);
+   if(buyer){
+     const current=players.filter(candidate=>candidate.team===buyer.team&&candidate.role===player.role&&!candidate.status);
+     if(current.some(candidate=>candidate.overall>player.overall+3))throw Error('O clube comprador já reforçou esta função.');
+     aiPurchase(run,read,input.careerId,buyer.organization,player,buyer.fee,day);
+   }
+   for(const offer of approaches(input.careerId,day,player.id))if(offer.state==='open')
+     setApproach(input.careerId,offer,offer.team===buyer?.team?'signed':'expired');
    run('DELETE FROM web_player_training WHERE career_id=? AND player_id=?',[input.careerId,player.id]);
    const updated=players.map(p=>p.id===player.id?{...p,organization:buyer?.organization??null,team:buyer?.team??null,
      history:[{day,description:buyer?'Vendido para '+buyer.name+'.':'Dispensado pela organização.'},...(p.history??[])]}:p);

@@ -30,7 +30,7 @@ export function Competitions({career,onOpenFixture,initialEditionId='',initialSe
          <button className="primary" disabled={busy||!finished} onClick={()=>void perform(async()=>{
            const next=await startCompetitionSeason(career.id);setYear(next.number);setEdition('');setNotice('Temporada '+next.year+' criada. Os jogos aparecem na Agenda.');
          })}>{latest?'Iniciar próxima temporada':'Iniciar temporada'}</button></div>
-       {!latest&&<p>Complete cinco titulares no elenco principal antes de iniciar. A V1 inscreve sua organização na liga regional compatível ou convida para o circuito CS2.</p>}
+       {!latest&&<p>Complete cinco titulares no elenco principal antes de iniciar. A inscrição segue a elegibilidade da sua carreira.</p>}
        {latest&&!finished&&<p>A temporada atual deve terminar antes da próxima edição.</p>}
        {!!state.seasons.length&&<label>Temporada<select value={season?.number} onChange={e=>{setYear(Number(e.target.value));setEdition('');}}>
          {state.seasons.map(s=><option key={s.number} value={s.number}>{s.year} · Temporada {s.number}</option>)}
@@ -41,6 +41,11 @@ export function Competitions({career,onOpenFixture,initialEditionId='',initialSe
      </details>
    </>}
    {season&&<>
+     {season.fpsRanking&&<section className="panel"><h2>Ranking de acesso ao Major</h2>
+       <p>{season.fpsRanking.length?'Classificação por resultados da temporada anterior. O Major tem oito vagas.':'O ranking começa após os primeiros resultados oficiais. Sua organização estreia no circuito regional.'}</p>
+       {!!season.fpsRanking.length&&<ol>{season.fpsRanking.slice(0,8).map(row=><li key={row.organization}>{row.organization==='career'?career.name:state?.seasons.flatMap(s=>s.editions).flatMap(e=>e.participants).find(p=>p.organization===row.organization)?.name??row.organization} · {row.points} pts</li>)}</ol>}
+       {season.fpsRanking.length>0&&<p>{season.editions.some(e=>e.key==='cs_major'&&e.participants.some(p=>p.id==='career'))?'Sua organização conquistou uma vaga no Major.':'Sua organização ficou fora das vagas do Major nesta temporada.'}</p>}
+     </section>}
      {!!season.notices.length&&<section className="panel"><h2>Edições indisponíveis</h2>{season.notices.map(message=><p key={message}>{message}</p>)}</section>}
      <div className="competition-cards">{season.editions.map(e=><button className={edition?.id===e.id?'current':''} key={e.id} onClick={()=>setEdition(e.id)}>
        <strong>{e.name}</strong><span>{e.prestige} · {e.participants.length} equipes</span>

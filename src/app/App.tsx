@@ -1,3 +1,5 @@
+import {startingEntry} from '../game-core/entry';
+import {defaultCompetitionConfig,regionalLeague} from '../game-core/competitions';
 import {gameVersion} from '../version';
 import {NewsPageView} from './News';
 import {Finances} from './Finances';
@@ -59,6 +61,13 @@ export function App(){
  const players=imported&&imported.id===career?.id?[...imported.rows,...worldPlayers]:worldPlayers;
  const contracts=contractState && contractState.careerId===career?.id ? contractState.rows : [];
  const [form,setForm]=useState({name:'',code:'',country:'BR',mode:'MOBA',difficulty:'Normal',color:'#ef123b',symbol:'animals_wolf'});
+ let entryPreview='';
+ if(step===4&&catalog){
+   try{
+     const entry=startingEntry(catalog,form.country,form.mode);
+     entryPreview=form.mode==='FPS'?defaultCompetitionConfig.cs_regional.name:catalog.leagues.find(league=>league.id===entry.leagueId)?.name??'';
+   }catch{entryPreview='';}
+ }
  useEffect(()=>{initialize().then(listCareers).then(rows=>{setSaves(rows);setReady(true);}).catch(e=>setError(e.message));fetch('/data/real_teams_2026.json').then(r=>{if(!r.ok)throw Error('Falha ao carregar catálogo');return r.json();}).then(setCatalog).catch(e=>setError(e.message));},[]);
  useEffect(()=>{fetch('/data/players-v1.json').then(response=>{if(!response.ok)throw Error('Catálogo de jogadores indisponível.');return response.json();}).then(setPlayers).catch(error=>setError(error.message));},[]);
  useEffect(()=>{let active=true;if(career)listContracts(career.id).then(rows=>{if(active)setContractState({careerId:career.id,rows});}).catch(error=>{if(active)setError(error.message);});return()=>{active=false;};},[career?.id]);
@@ -171,8 +180,10 @@ export function App(){
  </button>)}</div>}
  {step===2&&<IdentityEditor value={draftIdentity} onChange={setDraftIdentity} code={form.code}/>}
  {step===3&&<div className="choices">{Object.entries(budgets).map(([d,b])=><button key={d} className={form.difficulty===d?'selected':''} onClick={()=>update('difficulty',d)}><h3>{d}</h3><strong>{money(b)}</strong><p>Capital inicial</p></button>)}</div>}
- {step===4&&<div className="identity"><Emblem identity={draftIdentity} code={form.code}/><div><h2>{form.name} · {form.code}</h2><p>{countries[form.country]} · {countryRegions[form.country]} · {form.mode==='FPS'?'Counter-Strike 2':'League of Legends'}</p><p>Dificuldade {form.difficulty} · Caixa inicial {money(budgets[form.difficulty])}</p><p>Fundação em {formatCareerDay(1)}</p><p className="muted">Sua organização começa com o elenco vazio. Use o mercado para contratar agentes livres.</p></div></div>}
- </section><footer><button onClick={()=>step?setStep(step-1):setScreen('menu')}>← Voltar</button><button className="primary" disabled={!ready||busy||(step===0&&(!form.name.trim()||!form.code.trim()))} onClick={()=>step===4?start():setStep(step+1)}>{busy?'Salvando…':step===4?'Criar carreira':'Próximo →'}</button></footer></main>:
+ {step===4&&<div className="identity"><Emblem identity={draftIdentity} code={form.code}/><div><h2>{form.name} · {form.code}</h2><p>{countries[form.country]} · {countryRegions[form.country]} · {form.mode==='FPS'?'Counter-Strike 2':'League of Legends'}</p><p>Dificuldade {form.difficulty} · Caixa inicial {money(budgets[form.difficulty])}</p><p>Fundação em {formatCareerDay(1)}</p>
+   {entryPreview?<><p><strong>Competição inicial:</strong> {entryPreview} · {form.mode==='FPS'?'Circuito aberto':'Divisão de desenvolvimento'}</p>
+   <p>{form.mode==='FPS'?'Os resultados oficiais definem o ranking. As oito equipes elegíveis mais bem colocadas recebem vaga no Major da temporada seguinte.':'O título da divisão de entrada dá acesso à '+defaultCompetitionConfig[regionalLeague(form.country)].name+' na temporada seguinte.'}</p></>:<p role="status">Competição inicial indisponível para esta seleção.</p>}<p className="muted">Sua organização começa com o elenco vazio. Use o mercado para contratar agentes livres.</p></div></div>}
+ </section><footer><button onClick={()=>step?setStep(step-1):setScreen('menu')}>← Voltar</button><button className="primary" disabled={!ready||busy||(step===4&&!entryPreview)||(step===0&&(!form.name.trim()||!form.code.trim()))} onClick={()=>step===4?start():setStep(step+1)}>{busy?'Salvando…':step===4?'Criar carreira':'Próximo →'}</button></footer></main>:
 
 
  screen==='editor'?<main className="content"><h1>Editor de escudo</h1><IdentityEditor value={draftIdentity} onChange={setDraftIdentity} code={form.code}/><footer><button onClick={()=>{setStep(0);setScreen('wizard');}}>Usar em nova carreira</button></footer></main>:
