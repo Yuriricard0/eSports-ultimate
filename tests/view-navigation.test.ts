@@ -2,9 +2,54 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {appHarness} from './helpers/component-harness.ts';
 
+test('Central de negociações filtra propostas que vencem em breve e separa as expiradas',async()=>{
+ const app=appHarness({
+   listNegotiations:async()=>[
+     {id:'1',player_id:1,state:'counter',expires_day:12,reason:'Salário abaixo da expectativa'},
+     {id:'2',player_id:2,state:'accepted',expires_day:9,reason:'Termos aceitos'},
+   ],
+   listIncomingApproachHistory:async()=>[
+     {team:'buyer',day:8,playerId:3,state:'open',expires:16,name:'Clube comprador',fee:1000},
+   ],
+   listMarketMoves:async()=>[],
+   listRenewalRequests:async()=>[],
+ },[],'MarketNegotiations',{career:{id:'a',day:10},players:[
+   {id:1,nickname:'Alpha'},{id:2,nickname:'Bravo'},{id:3,nickname:'Charlie'},
+ ],draft:null});
+ app.render();await app.flush();
+ app.control('Filtrar negociações').props.onChange({target:{value:'Vencem em até 3 dias'}});app.render();
+ assert.match(app.text(),/Alpha.*Contraproposta/);
+ assert.doesNotMatch(app.text(),/Bravo|Charlie/);
+ app.control('Filtrar negociações').props.onChange({target:{value:'Recusadas ou expiradas'}});app.render();
+ assert.match(app.text(),/Bravo.*Expirada/);
+ assert.doesNotMatch(app.text(),/Alpha|Charlie/);
+ app.control('Filtrar negociações').props.onChange({target:{value:'Recebidas'}});app.render();
+ assert.match(app.text(),/Charlie.*Recebida/);
+ assert.doesNotMatch(app.text(),/Alpha|Bravo/);
+});
+
+test('apresentação exige confirmação concluída e abre somente quando solicitada',async()=>{
+ let finish:()=>void=()=>{};
+ const signed=new Promise<void>(resolve=>{finish=resolve;});
+ const app=appHarness({
+   listNegotiations:async()=>[{id:'offer',player_id:1,state:'accepted',expires_day:12,reason:'Termos aceitos'}],
+   listIncomingApproachHistory:async()=>[],listMarketMoves:async()=>[],listRenewalRequests:async()=>[],
+ },[],'MarketNegotiations',{career:{id:'a',day:10},players:[{id:1,nickname:'Alpha'}],contracts:[],draft:null,onFinish:()=>signed});
+ app.render();await app.flush();
+ app.button('Assinar contrato').props.onClick();await app.flush();
+ assert.doesNotMatch(app.text(),/Ver apresentação/);
+ finish();await app.flush();
+ assert.match(app.text(),/Ver apresentação de\s+Alpha/);
+ assert.equal(app.component('SigningPresentation'),undefined);
+ app.button('Ver apresentação').props.onClick();app.render();
+ assert.equal(app.component('SigningPresentation').props.player.id,1);
+ app.component('SigningPresentation').props.onClose();app.render();
+ assert.equal(app.component('SigningPresentation'),undefined);
+});
+
 test('perfil rápido fecha sem perder busca nem ordenação na lista',()=>{
  const player={id:1,nickname:'Alpha',name:'Atleta Alpha',mode:'MOBA',role:'mid',country:'BR',birthDay:-7300,overall:70};
- const app=appHarness({},[],'Players',{career:{id:'a',mode:'MOBA',day:1},players:[player],contracts:[],organizations:{},view:'market'});
+ const app=appHarness({loadMarketOverview:async()=>({targets:[],usage:[]})},[],'Players',{career:{id:'a',mode:'MOBA',day:1},players:[player],contracts:[],organizations:{},view:'market'});
  app.render();app.control('Buscar jogador').props.onChange({target:{value:'Alpha'}});app.control('Ordenar jogadores').props.onChange({target:{value:'age'}});app.render();
  app.control('Perfil de Alpha').props.onClick();app.render();
  assert.equal(app.component('PlayerProfilePanel').props.player.id,1);
@@ -18,7 +63,7 @@ test('ranked em ascensão exige histórico e mantém a classificação original'
  const base={name:'Jogador',mode:'MOBA',role:'mid',country:'BR',birthDay:-7000,overall:70,status:'ranked'};
  const players=[{...base,id:1,nickname:'Em Progresso',developmentHistory:[{day:60,overall:69}],rankedPerformance:{points:1000,winRate:50}},
    {...base,id:2,nickname:'Sem Histórico',rankedPerformance:{points:2000,winRate:50}}];
- const app=appHarness({},[],'Players',{career:{id:'a',mode:'MOBA',day:120},players,contracts:[],organizations:{},view:'ranked'});
+ const app=appHarness({loadMarketOverview:async()=>({targets:[],usage:[]})},[],'Players',{career:{id:'a',mode:'MOBA',day:120},players,contracts:[],organizations:{},view:'ranked'});
  app.render();app.control('Em ascensão').props.onChange({target:{checked:true}});app.render();
  assert.match(app.text(),/#2 ·\s*Em Progresso/);
  assert.doesNotMatch(app.text(),/Sem Histórico/);
@@ -31,7 +76,7 @@ test('filtros e ordenação da lista sobrevivem à volta e respeitam a carreira 
    {id:2,nickname:'Bravo',name:'Equipe B',mode:'MOBA',role:'mid',country:'BR',birthDay:-9000,overall:40},
  ];
  const props={career,players,contracts:[],organizations:{},view:'players'};
- const app=appHarness({},[],'Players',props);
+ const app=appHarness({loadMarketOverview:async()=>({targets:[],usage:[]})},[],'Players',props);
  app.render();
  assert.ok(app.text().indexOf('Alpha')<app.text().indexOf('Bravo'));
  app.control('Ordenar jogadores').props.onChange({target:{value:'age'}});

@@ -12,6 +12,7 @@ import {nextUserFixture,type Season} from '../src/game-core/competitions.ts';
 import type {Career} from '../src/game-core/career.ts';
 import {careerCreationVersion} from '../src/version.ts';
 import type {WorldCatalog} from '../src/game-core/world.ts';
+import {isMobaImport} from '../src/game-core/moba-eligibility.ts';
 
 const catalog=JSON.parse(readFileSync('public/data/real_teams_2026.json','utf8')) as WorldCatalog;
 const base=JSON.parse(readFileSync('public/data/players-v1.json','utf8')) as Player[];
@@ -35,7 +36,7 @@ for(const mode of ['MOBA','FPS'] as Mode[])test(`Alpha ${mode}: joga ${seasonCou
    };
    for(const role of roles[mode]){
      const player=players.filter(p=>p.mode===mode&&p.role===role&&!p.organization&&!p.status&&p.overall<=45&&athleteAge(p.birthDay,1)<=24)
-       .sort((a,b)=>b.overall-a.overall)[0];assert.ok(player,'livre para '+role);await sign(player);
+       .sort((a,b)=>(mode==='MOBA'?Number(isMobaImport(a,'cblol'))-Number(isMobaImport(b,'cblol')):0)||b.overall-a.overall)[0];assert.ok(player,'livre para '+role);await sign(player);
    }
    let contracts=await request('contracts',id) as Contract[];
    const own=new Set(contracts.map(c=>c.player_id));

@@ -5,11 +5,13 @@ import type {Contract,Player} from '../game-core/recruitment';
 import type {WorldCatalog} from '../game-core/world';
 import type {Mode} from '../game-core/attributes';
 import {roles} from '../game-core/attributes';
+import {loanPlayers,type Loan} from '../game-core/loans';
+import {mobaImports,regionalPolicies,registeredMobaLineup} from '../game-core/moba-eligibility';
 import {careerLineup,rivalLineup,type MatchResult,type MatchTeam} from '../game-core/matches';
 import type {StoredMatch} from '../game-core/match-store';
 import {defaultIdentity} from '../game-core/identity';
 import {formatCareerDay} from '../game-core/calendar';
-import {cancelMatch,listMatches,playMatch,prepareFriendly} from '../persistence/repository';
+import {cancelMatch,listLoans,listMatches,playMatch,prepareFriendly} from '../persistence/repository';
 import {Emblem} from './IdentityEditor';
 import {PlayerPortrait} from './PlayerPortrait';
 import {roleNames} from './Players';
@@ -22,7 +24,14 @@ function TeamBadge({team}:{team:MatchTeam}){
 }
 
 export function Matches(props:Parameters<typeof FriendlyMatches>[0]&{fixtureId?:string;onCompetitions:()=>void}){
- return props.fixtureId?<CompetitiveMatch {...props} fixtureId={props.fixtureId}/>:<FriendlyMatches {...props}/>;
+ const [loans,setLoans]=useState<Loan[]>([]);
+ useEffect(()=>{
+   let active=true;
+   listLoans(props.career.id).then(rows=>{if(active)setLoans(rows);}).catch(()=>{if(active)setLoans([]);});
+   return()=>{active=false;};
+ },[props.career]);
+ const sport={...props,players:loanPlayers(props.players,loans,props.career.day)};
+ return props.fixtureId?<CompetitiveMatch {...sport} fixtureId={props.fixtureId}/>:<FriendlyMatches {...sport}/>;
 }
 
 function FriendlyMatches({career,players,contracts,catalog,onUpdated,onRoster}:{
@@ -113,8 +122,11 @@ function CompetitiveMatch({career,players,contracts,fixtureId,onUpdated,onCompet
  const game=edition?.fixtures.find(g=>g.id===fixtureId);
  const teams=game&&edition?[game.home,game.away].flatMap(id=>edition.participants.filter(p=>p.id===id)):[];
  const fixtureMode=edition?.mode??career.mode as Mode;
- const lineups=teams.map(team=>team.id==='career'?careerLineup(players.filter(player=>player.mode===fixtureMode),contracts):rivalLineup(players,team.id,fixtureMode,career.day));
- const valid=lineups.length===2&&lineups.every(lineup=>lineup.length===5);
+ const region=edition?.importRegion;
+ const lineups=teams.map(team=>team.id==='career'?careerLineup(players.filter(player=>player.mode===fixtureMode),contracts):
+   region?registeredMobaLineup(players,team.id,career.day,region):rivalLineup(players,team.id,fixtureMode,career.day));
+ const valid=lineups.length===2&&lineups.every((lineup,index)=>teams[index].id!=='career'&&region||
+   (lineup.length===5&&(!region||mobaImports(lineup,region)<=regionalPolicies[region].limit)));
  const own=game&&(game.home==='career'||game.away==='career');
  return <>
    <div className="players-heading"><h1>Confronto de campeonato</h1><button onClick={onCompetitions}>← Competições</button></div>
@@ -125,7 +137,7 @@ function CompetitiveMatch({career,players,contracts,fixtureId,onUpdated,onCompet
      <h2>{edition.name} · MD{game.bestOf}</h2><p>{formatCareerDay(game.day)} · {edition.prestige} · {edition.region}</p>
      <div className="match-scoreboard"><TeamBadge team={teams[0]}/><strong>{game.result?game.result.score.join(' × '):'×'}</strong><TeamBadge team={teams[1]}/></div>
      {game.result?<>
-       <p><strong>{teams.find(team=>team.id===game.result!.winner)?.name} venceu a série.</strong> {game.result.maps.length} {edition.mode==='FPS'?'mapas':'jogos'} disputados.</p>
+       <p><strong>{teams.find(team=>team.id===game.result!.winner)?.name} venceu a série.</strong> {game.result.administrative?'Resultado administrativo por falta de escalação elegível.':game.result.maps.length+' '+(edition.mode==='FPS'?'mapas':'jogos')+' disputados.'}</p>
        <div className="advance-actions">{game.result.maps.map((map,index)=><button aria-pressed={mapIndex===index} key={index} onClick={()=>setMap(index)}>{edition.mode==='FPS'?'Mapa':'Jogo'} {index+1} · {map.score.join(' × ')}</button>)}</div>
      </>:!isScheduledFixture(game)?<p>Confronto indisponível para disputa.</p>:<>
        <div className="match-lineups">{lineups.map((lineup,index)=><div key={index}><h3>{teams[index].name}</h3>{lineup.map(slot=><div className="match-lineup-player" key={slot.player.id}><PlayerPortrait index={slot.player.portraitIndex}/><span>{slot.player.nickname}<small>{roleNames[slot.role]} · OVR {Math.round(slot.player.overall)}</small></span></div>)}</div>)}</div>

@@ -170,3 +170,43 @@ html[data-contrast=high]{--muted:#c8d1e4}html[data-contrast=high] button:not(:di
 @media(max-width:700px){.uem-news{padding:16px}.news-masthead{align-items:start}.news-masthead>time{max-width:95px}.news-edition{font-size:8px;letter-spacing:1px}.news-secondary{grid-template-columns:1fr}.news-visual{min-height:220px;padding-inline:16px}.news-score{gap:10px}.news-transfer{font-size:12px;flex-wrap:wrap;justify-content:center}.news-filters label{flex-basis:140px}.news-meta{font-size:10px}.uem-story-list{gap:12px;align-items:start}.uem-story-list h3{font-size:18px}.news-thumbnail{width:56px;height:65px;flex-basis:56px;padding:5px}.news-thumbnail img{width:44px;height:50px}.news-thumbnail .club-emblem{width:42px}.news-section-heading{align-items:baseline}.news-section-heading h2{font-size:20px}.news-section-heading>span{font-size:10px}.news-reader .news-visual{min-height:210px}.news-pagination{flex-wrap:wrap}.news-channels button{font-size:12px;padding:9px}.news-topics button{font-size:12px;padding:9px}.uem-story-copy{padding:18px}.news-panel-heading{flex-wrap:wrap}}
 @media(prefers-reduced-motion:reduce){.uem-news button,.news-reader button{transition:none}}
 .news-score>span{display:grid;justify-items:center;align-content:center;gap:10px}.news-score>span img{width:60px;height:64px;object-fit:contain}.news-score>span .club-emblem{width:56px}.news-score>span .club-emblem strong{font-size:9px}.news-score>span .news-monogram{min-width:45px;min-height:45px;font-size:13px}.uem-story-secondary .news-score>span img,.uem-story-secondary .news-score>span .club-emblem,.uem-story-secondary .news-score>span .news-monogram{display:none}
+/* Mercado V1.3 */
+.market-workspace{display:grid;grid-template-columns:minmax(165px,.8fr) minmax(0,2.6fr) minmax(195px,1fr);gap:14px;align-items:start}
+.market-workspace .market-heading,.market-toolbar,.market-error{grid-column:1/-1}
+.market-heading h1{margin:8px 0}.market-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:10px;background:#121a27;border:1px solid #303a4c;border-radius:9px}
+.market-toolbar strong{margin-left:auto;padding:0 8px}.market-toolbar [aria-pressed=true],.market-target[aria-pressed=true]{background:#74172e;border-color:#c42b4b}
+.market-negotiations-page{display:grid;gap:14px}
+.market-negotiations-page h1{margin:8px 0}
+.market-offers details{border-top:1px solid #303a4c;padding:12px 0}
+.market-offers summary{cursor:pointer;font-weight:600}
+.market-offers details p{margin:8px 0}
+.market-offers details button{margin:6px 8px 0 0}
+.reinforcement-preview{margin:16px 0;padding:12px;border:1px solid #3e3c51;border-radius:11px;background:#101622}
+.reinforcement-preview>summary{cursor:pointer;font-weight:700;color:#ffe3eb}
+.reinforcement-lineups,.reinforcement-impact{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0}
+.reinforcement-lineups>section{padding:14px;background:#171f2d;border:1px solid #354156;border-radius:9px}
+.reinforcement-lineups>section:last-child{border-color:#a73653;background:linear-gradient(125deg,#351623,#181e2c 74%)}
+.reinforcement-lineups h3{margin:0 0 4px;font-size:1rem}
+.reinforcement-lineups section>strong{font-size:1.65rem;display:block}
+.reinforcement-lineups small{display:block;color:#bac5d6}
+.reinforcement-athlete{display:flex;gap:10px;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid #404052}
+.reinforcement-athlete .player-portrait{width:46px;height:46px;flex:none}
+.reinforcement-impact>div{padding:8px 12px;border:1px solid #303a4c;border-radius:8px}
+.reinforcement-impact dt{font-size:.85rem;color:#bfcada}
+.reinforcement-impact dd{margin:4px 0 0;font-weight:700}
+.signing-open{justify-self:start}
+.signing-presentation{display:grid;grid-template-columns:minmax(110px,200px) 1fr;align-items:center;gap:20px;overflow:hidden;padding:20px;border:1px solid var(--signing-primary);border-radius:12px;background:linear-gradient(135deg,color-mix(in srgb,var(--signing-primary) 36%,#121622),#111521 60%,color-mix(in srgb,var(--signing-secondary) 32%,#111521))}
+.signing-portrait .player-portrait{display:block;width:100%;height:auto;aspect-ratio:1}
+.signing-club{display:flex;align-items:center;gap:10px}
+.signing-club .club-emblem{width:52px;height:55px;margin:0}
+.signing-copy h2{font-size:clamp(1.8rem,6vw,3.5rem);line-height:1;margin:10px 0;overflow-wrap:anywhere}
+@media(max-width:520px){.reinforcement-lineups,.reinforcement-impact{grid-template-columns:1fr}.signing-presentation{grid-template-columns:1fr}.signing-portrait{max-width:160px}}
+.market-workspace .market-filters{display:grid;gap:10px;margin:0;padding:14px}.market-filters h2,.market-workspace h2{font-size:18px;margin:0 0 8px}
+.market-center,.market-quick{min-width:0}.market-center .panel,.market-quick{padding:15px}
+.market-opportunity-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,145px),1fr));gap:8px}
+.market-opportunity-grid button{min-width:0;display:flex;align-items:flex-start;gap:8px;padding:10px;background:linear-gradient(145deg,#311c2b,#151e2e)}
+.market-opportunity-grid small{display:block;color:#adb9cc;margin-top:4px}.market-opportunity-grid .player-portrait{flex-shrink:0;width:42px;height:42px}
+.market-workspace .player-row{gap:8px;padding:8px;background:#141b28}.market-workspace .player-row[data-selected=true]{border-color:#d64463;background:#321a29}
+.market-workspace .player-row>div{flex:1 1 115px}.market-workspace .player-row .market-target{flex:0 0 auto}.market-quick .player-portrait{width:96px;height:96px}.market-quick p{font-size:14px;margin:8px 0}.market-quick button{margin:4px 3px 0 0;padding:8px 10px}
+@media(max-width:1200px){.market-workspace{grid-template-columns:minmax(150px,.7fr) minmax(0,2fr)}.market-quick{grid-column:2;grid-row:3}.market-center{grid-column:2}.market-workspace .market-filters{grid-row:3/span 2}}
+@media(max-width:750px){.market-workspace{display:flex;flex-direction:column;align-items:stretch}.market-quick{order:2}.market-center{order:3}}

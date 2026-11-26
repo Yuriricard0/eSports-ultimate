@@ -10,6 +10,8 @@ test('histórico oficial aumenta interesse e potencial oculto não altera a aval
  assert.ok(observed>unknown);
  const hiddenTalent={...player,ceiling:100};
  assert.equal(marketInterest(hiddenTalent,buyer,60,7),unknown);
+ assert.ok(marketInterest({...player,rankedPerformance:{points:2000,winRate:.6}},buyer,60,7)>unknown);
+ assert.ok(marketInterest(player,buyer,60,7,{games:0,impact:0,priorGames:2})>unknown);
  assert.equal(marketInterest(player,buyer,80,7,{games:4,impact:2}),0);
 });
 import {marketApproaches,marketLimits,type Approach} from '../src/game-core/market-interest.ts';
@@ -30,6 +32,7 @@ test('limites valem para atleta da IA e do usuário e respeitam recusa e orçame
  assert.ok(Number.isInteger(seed));
  const ai=simulate(seed,new Map())[0],user=simulate(seed,new Map([[7,365]]))[0];
  assert.equal(ai.fee,user.fee);assert.equal(ai.seller,'seller');assert.equal(user.seller,'career');
+ assert.equal(ai.expires-ai.day,7);
  assert.equal(simulate(seed,new Map(),[],false).length,0);
  assert.equal(simulate(seed,new Map(),[{...ai,day:20,state:'declined'}]).length,0);
  assert.equal(simulate(seed,new Map(),[{...ai,day:20,state:'expired'}]).length,1);

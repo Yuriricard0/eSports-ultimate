@@ -3,6 +3,8 @@ import type {Condition,DevelopmentPoint} from './development.ts';
 import type {PersonalObjective,PerkInfluence} from './player-identity.ts';
 import {trainingSchema} from './training.ts';
 import {financeSchema,recordCash} from './finance.ts';
+import {contractExpectationsSchema,type SquadRole} from './contract-expectations.ts';
+import type {MobaRegion} from './moba-eligibility.ts';
 
 export type Player = {
   id: number;
@@ -14,6 +16,8 @@ export type Player = {
   team: string | null;
   overall: number;
   country: string;
+  mobaTenure?:Partial<Record<MobaRegion,number>>;
+  onLoan?:boolean;
   birthDay: number;
   portraitIndex: number;
   estimateLow: number | null;
@@ -34,7 +38,7 @@ export type Player = {
   perkHistory?:{day:number;id:string;action:'acquired'|'removed'|'intensified'}[];
   perkEvents?:string[];
 };
-export type Contract = {player_id:number; salary:number; bonus:number; start_day:number; end_day:number; starter:number;academy?:number};
+export type Contract = {player_id:number; salary:number; bonus:number; start_day:number; end_day:number; starter:number;academy?:number;squad_role?:SquadRole|null;loan?:boolean};
 type Values = (string | number)[];
 type Run = (sql:string, values:Values) => void;
 type Read = (sql:string, values:Values) => Record<string,unknown> | undefined;
@@ -91,7 +95,7 @@ CREATE TABLE IF NOT EXISTS web_payroll (
   paid INTEGER NOT NULL DEFAULT 0 CHECK(paid BETWEEN 0 AND amount),
   PRIMARY KEY(career_id,player_id,start_day,due_day)
 );
-`+contractSupportSchema+trainingSchema+financeSchema;
+`+contractSupportSchema+trainingSchema+financeSchema+contractExpectationsSchema;
 
 export function terms(overall:number) {
   const level = Math.max(0,overall-35);

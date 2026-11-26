@@ -12,6 +12,9 @@ type Execute=(sql:string,bind?:Value[])=>void;
 const tables={
   careers:['id','name','code','country','mode','difficulty','balance','color','symbol','created','day'],
   web_contracts:['career_id','player_id','role','starter','salary','bonus','start_day','end_day'],
+  web_loans:['career_id','player_id','origin','destination','club','start_day','end_day','starter'],
+  web_contract_expectations:['career_id','player_id','start_day','squad_role','promised_day'],
+  web_renewal_requests:['career_id','player_id','start_day','day','gain','played','available','suggested_salary','state'],
   web_finances:['career_id','player_id','day','amount'],
   web_payroll:['career_id','player_id','start_day','due_day','amount','paid'],
   web_identity:['career_id','config'],
@@ -21,9 +24,11 @@ const tables={
   web_career_entry:['career_id','league_id','kind','displaced_team_id'],
   web_career_world:['career_id','seed','version','players'],
   web_lineup_history:['career_id','day','player_id'],
+  web_market_targets:['career_id','player_id'],
   web_lineup_favorites:['career_id','id','name','players'],
   web_negotiations:['id','career_id','player_id','opened_day','expires_day','state','bonus','salary','days','counter_bonus','counter_salary','reason'],
   web_transfer_quotes:['career_id','negotiation_id','organization','team','fee'],
+  web_negotiation_terms:['career_id','negotiation_id','squad_role','estimated_fee','asking_fee'],
   web_contract_closures:['career_id','player_id','start_day','day','reason'],
   web_salary_rates:['career_id','player_id','start_day','day','salary'],
   web_ai_market_days:['career_id','day'],
@@ -140,7 +145,7 @@ export function restoreWebBackup(read:Select,run:Execute,newId:()=>string){
           row.name=favoriteName(row.name);
           row.players=JSON.stringify(favoriteIds(JSON.parse(String(row.players))));
         }
-        if(table==='web_transfer_quotes')row.negotiation_id=id+':'+String(row.negotiation_id);
+        if(table==='web_transfer_quotes'||table==='web_negotiation_terms')row.negotiation_id=id+':'+String(row.negotiation_id);
         if(table==='web_matches')row.id=id+':'+String(row.id);
         run('INSERT INTO '+table+'('+columns.join(',')+') VALUES('+columns.map(()=>'?').join(',')+')',
           [id,...columns.slice(1).map(key=>row[key] as Value)]);

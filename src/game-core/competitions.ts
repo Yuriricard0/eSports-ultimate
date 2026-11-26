@@ -6,15 +6,16 @@ import type {Mode} from './attributes.ts';
 import {countryRegions} from './countries.ts';
 import {careerLineup,rivalLineup,matchStrength,simulateMatch,applyMatchConditions,type MatchSide,type MatchTeam,type MatchResult} from './matches.ts';
 import {defaultIdentity} from './identity.ts';
+import {eligibleMobaLineup,leagueMobaRegion,mobaImports,mobaRegion,regionalPolicies,type MobaRegion} from './moba-eligibility.ts';
 
 export type Prestige='Regional'|'Internacional'|'Major';
 export type CompetitionSetting={name:string;prize:number;reputationGain:number;finalBestOf:3|5};
 export type CompetitionConfig=Record<string,CompetitionSetting>;
 export type Participant=MatchTeam&{organization:string;strength:number;reputation:number};
-export type SeriesResult={winner:string;score:[number,number];maps:MatchResult[];completedDay:number};
+export type SeriesResult={winner:string;score:[number,number];maps:MatchResult[];completedDay:number;administrative?:'ineligible-lineup'};
 export type Fixture={id:string;competitionId:string;season:number;day:number;home:string;away:string;phase:'regular'|'quarterfinal'|'semifinal'|'final';round:number;bestOf:1|3|5;status:'scheduled'|'completed';result:SeriesResult|null};
 export type Competition={id:string;key:string;name:string;region:string;mode:Mode;season:number;prestige:Prestige;prize:number;reputationGain:number;finalBestOf:3|5;
- format:'league'|'knockout';participants:Participant[];fixtures:Fixture[];champion:string|null;finalOrder:string[];startDay:number;endDay:number};
+ format:'league'|'knockout';participants:Participant[];fixtures:Fixture[];champion:string|null;finalOrder:string[];startDay:number;endDay:number;importRegion?:MobaRegion};
 export type Season={number:number;year:number;startDay:number;endDay:number;editions:Competition[];notices:string[];fpsRanking?:ReturnType<typeof competitiveFpsRanking>};
 export type Standing={team:string;played:number;wins:number;losses:number;difference:number};
 const mobaRegions:Record<string,string>={cblol:'Brasil',lcs:'América do Norte',lec:'Europa',lck:'Coreia do Sul',lpl:'China',lcp:'Ásia-Pacífico'};
@@ -38,21 +39,21 @@ export function validateCompetitionConfig(input:unknown):CompetitionConfig{
  return result;
 }
 export function regionalLeague(country:string){
- if(country==='KR')return 'lck';if(country==='CN')return 'lpl';
- const region=countryRegions[country];
- if(country==='BR'||region==='América do Sul')return 'cblol';
- if(region==='América do Norte')return 'lcs';
- return region==='Ásia'||region==='Oceania'?'lcp':'lec';
+ return mobaRegion(country);
 }
 export function hashSeed(value:string){let seed=2166136261;for(const char of value)seed=Math.imul(seed^char.charCodeAt(0),16777619);return seed>>>0;}
 
-export function generateSeason(career:Career,catalog:WorldCatalog,players:Player[],contracts:Contract[],number:number,startDay:number,settings=defaultCompetitionConfig,bonuses:Record<string,number>={},previous?:Season):Season{
+export function generateSeason(career:Career,catalog:WorldCatalog,players:Player[],contracts:Contract[],number:number,startDay:number,settings=defaultCompetitionConfig,bonuses:Record<string,number>={},previous?:Season,enforceImports=false):Season{
  const config=validateCompetitionConfig(settings),mode=career.mode as Mode;
  const progression=career.createdVersion===careerCreationVersion&&!!career.entry;
  const entryId=career.entry?.leagueId;
  const elite=regionalLeague(career.country);
  const promoted=previous?.editions.some(e=>e.key===entryId&&e.champion==='career'||e.key===elite&&e.participants.some(p=>p.id==='career'));
  const ownSide:MatchSide={id:'career',name:career.name,code:career.code,logo:'',identity:career.identity??{...defaultIdentity,primary:career.color,symbol:career.symbol},lineup:careerLineup(players,contracts)};
+ if(enforceImports&&mode==='MOBA'){
+   const region=leagueMobaRegion(progression&&!promoted&&entryId?entryId:elite);
+   if(mobaImports(ownSide.lineup,region)>regionalPolicies[region].limit)throw Error('A escalação MOBA supera o limite regional de dois importados. Ajuste os titulares antes da inscrição.');
+ }
  const own:Participant={...ownSide,organization:'career',strength:matchStrength(ownSide,mode,career.day),reputation:Math.min(100,40+(bonuses.career??0))};
  // Only snapshots of team identity belong to participants, not duplicate player objects.
  delete (own as Partial<MatchSide>).lineup;
@@ -60,7 +61,9 @@ export function generateSeason(career:Career,catalog:WorldCatalog,players:Player
  const leagues=new Map(catalog.leagues.map(league=>[league.id,league]));
  const pools=catalog.teams.filter(team=>(!team.academy||(progression&&team.league===entryId))&&leagues.get(team.league)?.discipline===mode).flatMap(team=>{
    const org=organizations.get(team.organization);if(!org)return [];
-   const lineup=rivalLineup(players,team.id,mode,career.day);
+   const lineup=enforceImports&&mode==='MOBA'
+     ?eligibleMobaLineup(players.filter(player=>player.team===team.id).map(player=>({player,role:player.role,startDay:career.day})),leagueMobaRegion(team.league))
+     :rivalLineup(players,team.id,mode,career.day);
    try{return [{id:team.id,name:team.name,code:org.code,logo:org.logo,organization:org.id,
      strength:matchStrength({id:team.id,name:team.name,code:org.code,logo:org.logo,lineup},mode,career.day),reputation:Math.min(100,org.reputation+(bonuses[org.id]??0))}];}catch{return [];}
  }).sort((a,b)=>(b.strength*.8+b.reputation*.2)-(a.strength*.8+a.reputation*.2)||a.id.localeCompare(b.id));
@@ -69,6 +72,7 @@ export function generateSeason(career:Career,catalog:WorldCatalog,players:Player
  const create=(key:string,participants:Participant[],prestige:Prestige,region:string,offset:number,format:'league'|'knockout')=>{
    const setting=config[key]??{name:leagues.get(key)!.name,prize:5000000,reputationGain:2,finalBestOf:5 as const},id='s'+number+':'+key;
    const competition:Competition={id,key,region,mode,season:number,prestige,...setting,format,participants,fixtures:[],champion:null,finalOrder:[],startDay:startDay+offset,endDay:startDay+offset};
+   if(enforceImports&&mode==='MOBA')competition.importRegion=leagueMobaRegion(key);
    const add=(home:string,away:string,round:number,phase:Fixture['phase'],day:number,bestOf:1|3|5)=>competition.fixtures.push({id:id+':'+phase+':'+competition.fixtures.length,competitionId:id,season:number,home,away,round,phase,day,bestOf,status:'scheduled',result:null});
    if(format==='league'){
      let circle=participants.map(p=>p.id);
@@ -225,6 +229,17 @@ export function playCompetitionFixture(season:Season,fixtureId:string,day:number
  if(!isScheduledFixture(game))throw Error('Este confronto não está disponível.');
  if(day<game.day)throw Error('Avance até a data do confronto.');
  if(teams[0].id!==game.home||teams[1].id!==game.away)throw Error('Participantes incompatíveis com o confronto.');
- const result=simulateSeries(teams,edition.mode,day,game.bestOf,hashSeed(seed+':'+game.id));
+ if(edition.mode==='MOBA'&&edition.importRegion&&teams.some(team=>mobaImports(team.lineup,edition.importRegion!)>regionalPolicies[edition.importRegion!].limit))
+   throw Error('A escalação MOBA supera o limite regional de dois importados.');
+ const unavailable=teams.map(team=>team.lineup.length!==5);
+ let result:SeriesResult;
+ if(edition.importRegion&&unavailable.some(Boolean)&&!teams.some((team,index)=>team.id==='career'&&unavailable[index])){
+   const winner=unavailable[0]&&unavailable[1]
+     ?teams.findIndex(team=>team.id===edition.participants.find(participant=>teams.some(side=>side.id===participant.id))?.id)
+     :unavailable[0]?1:0;
+   const score:[number,number]=[0,0];
+   score[winner]=Math.floor(game.bestOf/2)+1;
+   result={winner:teams[winner].id,score,maps:[],completedDay:day,administrative:'ineligible-lineup'};
+ }else result=simulateSeries(teams,edition.mode,day,game.bestOf,hashSeed(seed+':'+game.id));
  game.result=result;game.status='completed';progressBracket(edition);return result;
 }

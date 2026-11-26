@@ -3,13 +3,16 @@ import type {Career} from '../game-core/career';
 import type {Contract,Player} from '../game-core/recruitment';
 import type {SaleOption} from '../game-core/market';
 import {formatCareerDay} from '../game-core/calendar';
+import {squadRoleExpectations,squadRoleNames,type SquadRole} from '../game-core/contract-expectations';
+import {transferValue} from '../game-core/market';
 import {declineApproach,leaveRoster,listSaleOptions,renewPlayerContract} from '../persistence/repository';
 
 const money=(value:number)=>'$ '+(value/100).toLocaleString('pt-BR');
-export function RosterContracts({career,player,contract,action,onClose,onUpdated}:{
- career:Career;player:Player;contract:Contract;action:'renew'|'sell'|'release';onClose:()=>void;onUpdated:(career:Career)=>Promise<void>;
+export function RosterContracts({career,player,contract,action,onClose,onUpdated,suggestedSalary}:{
+ career:Career;player:Player;contract:Contract;action:'renew'|'sell'|'release';onClose:()=>void;onUpdated:(career:Career)=>Promise<void>;suggestedSalary?:number;
 }){
- const [salary,setSalary]=useState(String(contract.salary/100));
+ const [salary,setSalary]=useState(String(Math.max(contract.salary,suggestedSalary??0)/100));
+ const [squadRole,setSquadRole]=useState<SquadRole>(contract.squad_role??(contract.academy?'prospect':contract.starter?'starter':'reserve'));
  const [days,setDays]=useState(365);
  const [offers,setOffers]=useState<SaleOption[]|null>(null);
  const [busy,setBusy]=useState(false),[error,setError]=useState('');
@@ -29,17 +32,22 @@ export function RosterContracts({career,player,contract,action,onClose,onUpdated
    <div className="players-heading"><h2>{action==='renew'?'Renovar contrato':action==='sell'?'Propostas de compra':'Dispensar jogador'} · {player.nickname}</h2>
      <button disabled={busy} onClick={onClose}>{action==='sell'?'Fechar':'Cancelar'}</button></div>
    {error&&<p role="alert">{error}</p>}
-   {action==='renew'&&<form onSubmit={event=>{event.preventDefault();void execute(()=>renewPlayerContract(career.id,player.id,Math.round(Number(salary)*100),days));}}>
+   {action==='renew'&&<form onSubmit={event=>{event.preventDefault();void execute(()=>renewPlayerContract(career.id,player.id,Math.round(Number(salary)*100),days,squadRole));}}>
      <p>Vínculo atual até {formatCareerDay(contract.end_day)}. A renovação acrescenta dias a esse prazo.</p>
      <div className="world-filters">
        <label>Salário a cada 30 dias ($)<input type="number" required step=".01" min={contract.salary/100} max={10000000} value={salary} onChange={e=>setSalary(e.target.value)}/></label>
        <label>Prorrogação<select value={days} onChange={e=>setDays(Number(e.target.value))}><option value={180}>180 dias</option><option value={365}>365 dias</option><option value={730}>730 dias</option></select></label>
+       <label>Papel prometido<select value={squadRole} onChange={e=>setSquadRole(e.target.value as SquadRole)}>
+         {Object.entries(squadRoleNames).map(([value,label])=><option key={value} value={value}>{label}</option>)}
+       </select></label>
      </div>
+     <p className="muted">{squadRoleExpectations[squadRole]}</p>
      <p>Novo término: {formatCareerDay(contract.end_day+days)}. Sem luvas de renovação. O novo salário vale a partir de hoje.</p>
      <button className="primary" disabled={busy}>Confirmar renovação</button>
    </form>}
    {action==='sell'&&<>
      <p>Aceite uma proposta para concluir a venda. O valor entra no caixa e o salário trabalhado é acertado na saída.</p>
+     <p>Valor estimado de mercado {money(transferValue(player))}</p>
      {offers===null&&!error&&<p role="status">Buscando clubes interessados…</p>}
      {offers?.length===0&&<p>Nenhum clube interessado neste momento.</p>}
      <div className="market-offers">{offers?.map(offer=><article key={offer.team}><h3>{offer.name}</h3><p>{'expires' in offer?'Proposta espontânea':'Cotação solicitada'} · {money(offer.fee)}</p>

@@ -13,6 +13,9 @@ import type {NewsFilter,NewsPage} from '../game-core/news';
 import {trackSave} from '../game-core/save-status';
 import type {FavoriteLineup} from '../game-core/lineup-favorites';
 import type {PlayerMilestone} from '../game-core/player-milestones';
+import type {ContractAlert,RenewalRequest,SquadRole} from '../game-core/contract-expectations';
+import type {Loan} from '../game-core/loans';
+import type {MobaRegion} from '../game-core/moba-eligibility';
 let worker:Worker;
 let storageFailure:Error|undefined;
 let sequence=0;
@@ -32,8 +35,8 @@ export async function initialize(){
 }
 const saveActions=new Set(['delete','create','import','identity','rename','starter','prepare-match','play-match','cancel-match',
  'start-season','competition-config','play-competition','sponsor-accept','sponsor-reject','facility-upgrade','assign-academy',
- 'set-training','submit-offer','confirm-offer','cancel-offer','renew-contract','depart-player','advance',
- 'lineup-favorite-create','lineup-favorite-rename','lineup-favorite-delete','lineup-favorite-apply']);
+ 'set-training','submit-offer','confirm-offer','cancel-offer','renew-contract','decline-renewal','depart-player','advance',
+ 'lineup-favorite-create','lineup-favorite-rename','lineup-favorite-delete','lineup-favorite-apply','create-loan']);
 function request<T>(action:string,input?:unknown):Promise<T>{
  const send=()=>new Promise<T>((resolve,reject)=>{
  if(storageFailure){reject(storageFailure);return;}
@@ -53,6 +56,10 @@ export const exportGodotSource=(careerId:string)=>request<Uint8Array>('godot-sou
 export const saveIdentity=(careerId:string,identity:Identity)=>request<Career>('identity',{careerId,identity});
 export const renameSave=(careerId:string,name:string)=>request<Career[]>('rename',{careerId,name});
 export const listContracts=(id:string)=>request<Contract[]>('contracts',id);
+export const listLoans=(id:string)=>request<Loan[]>('loans',id);
+export const listLoanClubs=(id:string)=>request<{id:string;name:string}[]>('loan-clubs',id);
+export const createLoan=(careerId:string,playerId:number,teamId:string,days:number)=>request<Career>('create-loan',{careerId,playerId,teamId,days});
+export const listImportRegion=(id:string)=>request<MobaRegion|null>('import-region',id);
 export const setStarter=(careerId:string,playerId:number)=>request<boolean>('starter',{careerId,playerId});
 export const listFavoriteLineups=(careerId:string)=>request<FavoriteLineup[]>('lineup-favorites',careerId);
 export const createFavoriteLineup=(careerId:string,name:string)=>request<boolean>('lineup-favorite-create',{careerId,name});
@@ -82,12 +89,17 @@ export const chooseTraining=(careerId:string,playerId:number,focus:TrainingFocus
 export const listImportedPlayers=(id:string)=>request<Player[]>('imported-players',id);
 export const listWorldPlayers=(id:string)=>request<Player[]|null>('world-players',id);
 export const listNegotiations=(careerId:string)=>request<Negotiation[]>('negotiations',careerId);
-export const sendOffer=(careerId:string,playerId:number,offer:Offer)=>request<NegotiationState>('submit-offer',{careerId,playerId,offer});
+export const sendOffer=(careerId:string,playerId:number,offer:Offer,replyTo?:string)=>request<NegotiationState>('submit-offer',{careerId,playerId,offer,replyTo});
 export const finishOffer=(careerId:string,id:string)=>request<Career>('confirm-offer',{careerId,id});
 export const cancelOffer=(careerId:string,id:string)=>request<boolean>('cancel-offer',{careerId,id});
 export const listSaleOptions=(careerId:string,playerId:number)=>request<SaleOption[]>('sale-options',{careerId,playerId});
-export const renewPlayerContract=(careerId:string,playerId:number,salary:number,days:number)=>request<Career>('renew-contract',{careerId,playerId,salary,days});
-export const leaveRoster=(careerId:string,playerId:number,team?:string)=>request<Career>('depart-player',{careerId,playerId,team});
+export const renewPlayerContract=(careerId:string,playerId:number,salary:number,days:number,squadRole?:SquadRole)=>request<Career>('renew-contract',{careerId,playerId,salary,days,squadRole});
+export const listContractAlerts=(careerId:string)=>request<ContractAlert[]>('contract-alerts',careerId);
+export const listRenewalRequests=(careerId:string)=>request<RenewalRequest[]>('renewal-requests',careerId);
+export const declineRenewal=(careerId:string,requestRow:RenewalRequest)=>request<boolean>('decline-renewal',{
+ careerId,playerId:requestRow.player_id,startDay:requestRow.start_day,day:requestRow.day,
+});
+export const leaveRoster=(careerId:string,playerId:number,team?:string,offerDay?:number)=>request<Career>('depart-player',{careerId,playerId,team,offerDay});
 export type MarketMove={player_id:number;day:number;kind:string;amount:number;description:string};
 export const listMarketMoves=(careerId:string)=>request<MarketMove[]>('market-moves',careerId);
 export type PayrollEntry={player_id:number;due_day:number;amount:number;paid:number};
@@ -99,4 +111,8 @@ export const advanceDays=(careerId:string,expectedDay:number,days:number)=>
  request<{report:CalendarResult;career:Career}>('advance',{careerId,expectedDay,days});
 
 export const listIncomingApproaches=(careerId:string)=>request<import('../game-core/market-interest').Approach[]>('incoming-approaches',careerId);
-export const declineApproach=(careerId:string,playerId:number,team:string)=>trackSave(()=>request<boolean>('decline-approach',{careerId,playerId,team}));
+export const listIncomingApproachHistory=(careerId:string)=>request<import('../game-core/market-interest').Approach[]>('incoming-approach-history',careerId);
+export const declineApproach=(careerId:string,playerId:number,team:string,offerDay?:number)=>trackSave(()=>request<boolean>('decline-approach',{careerId,playerId,team,offerDay}));
+
+export const loadMarketOverview=(careerId:string)=>request<{targets:number[];usage:Array<[number,import('../game-core/market-overview').MarketUsage]>}>('market-overview',careerId);
+export const setMarketTarget=(careerId:string,playerId:number,tracked:boolean)=>trackSave(()=>request<number[]>('market-target',{careerId,playerId,tracked}));

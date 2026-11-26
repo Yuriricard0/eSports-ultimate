@@ -3,6 +3,7 @@ import {roles,type Mode} from './attributes.ts';
 import {salaryDue} from './calendar.ts';
 import type {WorldCatalog} from './world.ts';
 import {recordCash} from './finance.ts';
+import {validateSquadRole,type SquadRole} from './contract-expectations.ts';
 
 type Bind=(string|number)[];
 type Row=Record<string,unknown>;
@@ -12,6 +13,14 @@ type All=(sql:string,bind:Bind)=>Row[];
 export type SaleOption={organization:string;team:string;fee:number;name:string};
 
 export function transferValue(player:Pick<Player,'overall'>){return terms(player.overall).bonus*2;}
+
+export function sellerAskingPrice(player:Pick<Player,'id'|'organization'|'team'|'role'|'overall'>,players:Player[]){
+ if(!player.organization)return 0;
+ const estimate=transferValue(player);
+ if(!player.team)return estimate;
+ const hasCover=players.some(candidate=>candidate.id!==player.id&&candidate.team===player.team&&candidate.role===player.role&&!candidate.status);
+ return hasCover?estimate:Math.round(estimate*1.1/100)*100;
+}
 
 export function saleOptions(player:Player,catalog:WorldCatalog,players:Player[],affordable?:(organization:string,fee:number)=>boolean):SaleOption[]{
  const organizations=new Map(catalog.organizations.map(org=>[org.id,org]));
@@ -55,7 +64,8 @@ export function maintainRosters(players:Player[],catalog:WorldCatalog,owned:Set<
  return result;
 }
 
-export function renewContract(run:Run,read:Read,all:All,careerId:string,playerId:number,salary:number,days:number){
+export function renewContract(run:Run,read:Read,all:All,careerId:string,playerId:number,salary:number,days:number,squadRole?:SquadRole){
+ validateSquadRole(squadRole);
  if(![180,365,730].includes(days)||!Number.isSafeInteger(salary)||salary<100||salary>1000000000)throw Error('Confira salário e duração.');
  run('BEGIN IMMEDIATE',[]);
  try{
@@ -72,6 +82,10 @@ export function renewContract(run:Run,read:Read,all:All,careerId:string,playerId
    run('INSERT OR IGNORE INTO web_salary_rates VALUES(?,?,?,?,?)',[careerId,playerId,start,start,Number(contract.salary)]);
    run('INSERT INTO web_salary_rates VALUES(?,?,?,?,?) ON CONFLICT(career_id,player_id,start_day,day) DO UPDATE SET salary=excluded.salary',[careerId,playerId,start,day,salary]);
    run('UPDATE web_contracts SET salary=?,end_day=end_day+? WHERE career_id=? AND player_id=? AND start_day=?',[salary,days,careerId,playerId,start]);
+   if(squadRole)run(`INSERT INTO web_contract_expectations VALUES(?,?,?,?,?)
+     ON CONFLICT(career_id,player_id,start_day) DO UPDATE SET squad_role=excluded.squad_role,promised_day=excluded.promised_day`,
+     [careerId,playerId,start,squadRole,day]);
+   run("UPDATE web_renewal_requests SET state='renewed' WHERE career_id=? AND player_id=? AND start_day=? AND state='pending'",[careerId,playerId,start]);
    run('INSERT INTO web_market_moves VALUES(?,?,?,?,?,?)',[careerId,playerId,day,'renewed',0,'Contrato renovado por '+days+' dias. Salário: '+salary/100+'.']);
    run('COMMIT',[]);
  }catch(error){run('ROLLBACK',[]);throw error;}

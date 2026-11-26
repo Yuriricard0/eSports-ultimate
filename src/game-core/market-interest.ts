@@ -6,15 +6,16 @@ import type {Player} from './recruitment.ts';
 import type {WorldCatalog} from './world.ts';
 
 export const marketLimits={interval:7,club:2,athlete:2,window:30,repeat:35,refused:60,expires:14};
-export type Evidence={games:number;impact:number};
+export type Evidence={games:number;impact:number;priorGames?:number};
 type ObservedPlayer=Pick<Player,'id'|'mode'|'role'|'overall'|'birthDay'|'estimateLow'|'organization'> & Pick<Partial<Player>,'rankedPerformance'>;
 export function marketInterest(player:ObservedPlayer,buyer:{reputation:number;academy:boolean},incumbent:number|undefined,day:number,evidence:Evidence={games:0,impact:0},listed=false,remaining?:number){
- const observed=evidence.games>0?player.overall:player.estimateLow??Math.min(player.overall,45);
+ const rankedExposure=(player.rankedPerformance?.points??0)>=1900;
+ const recognized=(evidence.priorGames??0)>0||rankedExposure;
+ const observed=evidence.games>0||recognized?player.overall:player.estimateLow??Math.min(player.overall,45);
  if(incumbent!==undefined&&observed<incumbent+3)return 0;
  if(observed>buyer.reputation+25||observed<buyer.reputation-32)return 0;
  const age=athleteAge(player.birthDay,day);
- const rankedExposure=(player.rankedPerformance?.points??0)>=1900;
- const known=evidence.games>0?Math.min(0.48,0.14+evidence.games*0.035+Math.max(-2,Math.min(2,evidence.impact))*0.035):rankedExposure?0.15:player.estimateLow!==null?0.10:0.015;
+ const known=evidence.games>0?Math.min(0.48,0.14+evidence.games*0.035+Math.max(-2,Math.min(2,evidence.impact))*0.035):recognized?0.15:player.estimateLow!==null?0.10:0.015;
  const fit=incumbent===undefined?1:0.65;
  const development=buyer.academy&&age<=23?1.25:1;
  const contract=remaining!==undefined&&remaining<=90?1.25:1;
@@ -25,7 +26,7 @@ export function competitiveEvidence(season:Season|undefined,day:number){
  const records=new Map<number,Evidence>();
  for(const edition of season?.editions??[])for(const fixture of edition.fixtures){
    const result=fixture.result;
-   if(!result||result.completedDay>day||result.completedDay<day-120)continue;
+   if(!result||result.completedDay>day)continue;
    const appearances=new Map<number,number>();
    for(const map of result.maps)for(const stat of map.stats){
      const impact=stat.kills+stat.assists*.35-stat.deaths;
@@ -33,7 +34,8 @@ export function competitiveEvidence(season:Season|undefined,day:number){
    }
    for(const [id,impact] of appearances){
      const row=records.get(id)??{games:0,impact:0};
-     records.set(id,{games:row.games+1,impact:(row.impact*row.games+impact)/(row.games+1)});
+     if(result.completedDay<day-120)records.set(id,{...row,priorGames:(row.priorGames??0)+1});
+     else records.set(id,{...row,games:row.games+1,impact:(row.impact*row.games+impact)/(row.games+1)});
    }
  }
  return records;
@@ -49,11 +51,13 @@ CREATE INDEX IF NOT EXISTS web_ai_approach_recent ON web_ai_approaches(career_id
 export function marketApproaches(players:Player[],catalog:WorldCatalog,owners:ReadonlyMap<number,number>,evidence:ReadonlyMap<number,Evidence>,history:Approach[],seed:number,day:number,affordable:(org:string,player:Player,fee:number)=>boolean,limits=marketLimits,blocked:ReadonlySet<number>=new Set()):Approach[]{
  const roleKey=(mode:string,role:string)=>mode+':'+role;
  const slots=new Map<string,number>();
+ const depth=new Map<string,number>();
  const pool=new Map<string,Player[]>();
  for(const player of players){
    if(player.status)continue;
    if(player.team&&!owners.has(player.id)){
      const key=player.team+':'+player.role;
+     depth.set(key,(depth.get(key)??0)+1);
      slots.set(key,Math.max(slots.get(key)??0,player.overall));
    }
    if(blocked.has(player.id)||(!player.organization&&!owners.has(player.id)))continue;
@@ -80,7 +84,10 @@ export function marketApproaches(players:Player[],catalog:WorldCatalog,owners:Re
    const recent=historyByClub.get(team.organization)??[];
    if(!buyer||!mode||clubs.has(buyer.id)||count(recent)>=limits.club)continue;
    if(hashSeed(seed+':market:'+day+':'+team.id)%100>=6)continue;
-   for(const role of roles[mode]){
+   const needs=roles[mode].filter(role=>(depth.get(team.id+':'+role)??0)<2&&
+     !recent.some(row=>row.team===team.id&&row.role===role&&row.state==='open'&&row.expires>=day))
+     .sort((a,b)=>(depth.get(team.id+':'+a)??0)-(depth.get(team.id+':'+b)??0));
+   for(const role of needs){
      const incumbent=slots.get(team.id+':'+role);
      const candidates=pool.get(roleKey(mode,role))??[];
      const start=hashSeed(seed+':'+day+':'+team.id+':'+role)%candidates.length;
@@ -99,7 +106,7 @@ export function marketApproaches(players:Player[],catalog:WorldCatalog,owners:Re
      }
      if(!best||hashSeed(seed+':bid:'+day+':'+team.id+':'+role)%10000>=best.interest*10000)continue;
      result.push({organization:buyer.id,team:team.id,playerId:best.player.id,seller:best.seller,role,
-       name:team.name,fee:best.fee,day,expires:day+limits.expires,state:'open'});
+       name:team.name,fee:best.fee,day,expires:day+(incumbent===undefined?Math.min(7,limits.expires):limits.expires),state:'open'});
      clubs.add(buyer.id);athletes.add(best.player.id);break;
    }
  }

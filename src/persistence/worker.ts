@@ -1,9 +1,13 @@
+import {marketTargetsSchema,marketUsage} from '../game-core/market-overview';
+import {loanSchema,loanPeriods,activeLoans,loanPlayers,loanContracts,type Loan} from '../game-core/loans';
+import {eligibleMobaLineup,leagueMobaRegion,mobaImports,regionalPolicies,registeredMobaLineup,type MobaRegion} from '../game-core/moba-eligibility';
 import {approachSchema,competitiveEvidence,marketApproaches,marketInterest,marketLimits,type Approach} from '../game-core/market-interest';
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 import {allocateSqliteBytes} from './sqlite-bytes';
 import {schema,careerInput,deleteCareer,validateSaveName,saveVersionSchema,type Career} from '../game-core/career';
 import {careerCreationVersion} from '../version';
-import {contractSchema,selectStarter,type Contract,type Player} from '../game-core/recruitment';
+import {contractSchema,selectStarter,terms,type Contract,type Player} from '../game-core/recruitment';
+import {contractFixtures,contractParticipation,expectationDelta,expiryLevel,renewalGrounds,type SquadRole} from '../game-core/contract-expectations';
 import {advanceCareerDay,calendarVersion,migrateCalendar} from '../game-core/calendar';
 import {defaultIdentity,phaseOneSchema,validateIdentity} from '../game-core/identity';
 import {assertBackupFile,readGodotCareer,readGodotRoster,restoreWebBackup} from '../game-core/backup';
@@ -20,7 +24,7 @@ import {competitionMilestones,participated,rosterEventNames,type PlayerMilestone
 import {applyAdaptation,renewWorld,seasonBoundaries} from '../game-core/renewal';
 import {applyPerkEvent} from '../game-core/perk-events';
 import {confirmOffer,negotiationSchema,submitOffer} from '../game-core/negotiation';
-import {departPlayer,maintainRosters,renewContract,saleOptions} from '../game-core/market';
+import {departPlayer,maintainRosters,renewContract,saleOptions,sellerAskingPrice} from '../game-core/market';
 import {assignAcademy,setTrainingFocus} from '../game-core/academy';
 import type {PlayerTraining,TrainingPlan} from '../game-core/training';
 import {matchSchema,prepareMatch,completeMatch} from '../game-core/match-store';
@@ -89,7 +93,7 @@ const initialized=(async()=>{
  if(/CHECK\s*\(\s*bonus\s*>\s*0\s*\)/i.test(String(db.selectValue("SELECT sql FROM sqlite_schema WHERE name='web_contracts'")))){
    migrateZeroSigningBonus(sql=>{db.exec(sql);});
  }
- db.exec(contractSchema+phaseOneSchema+negotiationSchema+matchSchema+competitionSchema+newsSchema+saveVersionSchema+favoriteLineupSchema+approachSchema);
+ db.exec(contractSchema+phaseOneSchema+negotiationSchema+matchSchema+competitionSchema+newsSchema+saveVersionSchema+favoriteLineupSchema+approachSchema+marketTargetsSchema+loanSchema);
  db.transaction(()=>{
    for(const row of db.selectObjects('SELECT id FROM careers'))initializeFinance((sql,bind)=>{db.exec({sql,bind});},(sql,bind)=>db.selectObject(sql,bind),(sql,bind)=>db.selectObjects(sql,bind),String(row.id));
    db.exec('PRAGMA user_version=10;');
@@ -113,12 +117,14 @@ async function handleRequest(event:MessageEvent){
    ...db.selectObjects('SELECT player_id FROM web_current_contracts WHERE career_id=?',[careerId]),
    ...db.selectObjects('SELECT player_id FROM web_imported_players p WHERE career_id=? AND member=1 AND NOT EXISTS(SELECT 1 FROM web_contracts c WHERE c.career_id=p.career_id AND c.player_id=p.player_id)',[careerId]),
  ].map(row=>Number(row.player_id)));
- const contractsFor=(careerId:string)=>all(`SELECT c.player_id,salary,bonus,start_day,end_day,starter,COALESCE(t.academy,0) academy
-   FROM web_current_contracts c LEFT JOIN web_player_training t ON t.career_id=c.career_id AND t.player_id=c.player_id WHERE c.career_id=?
-   UNION ALL SELECT p.player_id,0,0,0,0,p.starter,COALESCE(t.academy,0) FROM web_imported_players p
+ const contractsFor=(careerId:string)=>all(`SELECT c.player_id,c.salary,c.bonus,c.start_day,c.end_day,c.starter,COALESCE(t.academy,0) academy,e.squad_role
+   FROM web_current_contracts c LEFT JOIN web_player_training t ON t.career_id=c.career_id AND t.player_id=c.player_id
+   LEFT JOIN web_contract_expectations e ON e.career_id=c.career_id AND e.player_id=c.player_id AND e.start_day=c.start_day WHERE c.career_id=?
+   UNION ALL SELECT p.player_id,0,0,0,0,p.starter,COALESCE(t.academy,0),NULL FROM web_imported_players p
    LEFT JOIN web_player_training t ON t.career_id=p.career_id AND t.player_id=p.player_id
    WHERE p.career_id=? AND p.member=1 AND NOT EXISTS(SELECT 1 FROM web_contracts c WHERE c.career_id=p.career_id AND c.player_id=p.player_id)
    ORDER BY starter DESC`,[careerId,careerId]) as unknown as Contract[];
+ const loansFor=(id:string)=>all('SELECT player_id,origin,destination,club,start_day,end_day,starter FROM web_loans WHERE career_id=? ORDER BY start_day DESC,player_id',[id]) as unknown as Loan[];
  const marketPlayers=async(careerId:string)=>{
    const stored=savedPlayers(careerId);
    const world=typeof stored==='string'?JSON.parse(stored) as Player[]:await loadPlayers();
@@ -172,18 +178,24 @@ async function handleRequest(event:MessageEvent){
    const team=catalog.teams.find(team=>team.id===opponentId);
    const org=catalog.organizations.find(org=>org.id===team?.organization);
    if(!team||!org||catalog.leagues.find(league=>league.id===team.league)?.discipline!==current.mode)throw Error('Equipe adversária ou modalidade incompatível.');
+   const loans=loansFor(careerId),sport=loanPlayers(players,loans,current.day);
    const sides:[MatchSide,MatchSide]=[
-     {id:'career:'+current.id,name:current.name,code:current.code,logo:'',identity:current.identity??{...defaultIdentity,primary:current.color,symbol:current.symbol},lineup:careerLineup(players,contractsFor(careerId))},
-     {id:team.id,name:team.name,code:org.code,logo:org.logo,lineup:rivalLineup(players,team.id,current.mode as Mode,current.day)},
+     {id:'career:'+current.id,name:current.name,code:current.code,logo:'',identity:current.identity??{...defaultIdentity,primary:current.color,symbol:current.symbol},lineup:careerLineup(sport,loanContracts(sport,contractsFor(careerId),loans,current.day))},
+     {id:team.id,name:team.name,code:org.code,logo:org.logo,lineup:rivalLineup(sport,team.id,current.mode as Mode,current.day)},
    ];
    const owned=ownedIds(careerId);
-   if(sides[1].lineup.some(slot=>owned.has(slot.player.id)))throw Error('O adversário possui vínculo conflitante com o seu elenco.');
+   const outgoing=new Set(activeLoans(loans,current.day).filter(loan=>loan.destination===team.id).map(loan=>loan.player_id));
+   if(sides[1].lineup.some(slot=>owned.has(slot.player.id)&&!outgoing.has(slot.player.id)))throw Error('O adversário possui vínculo conflitante com o seu elenco.');
    sides.forEach(side=>matchStrength(side,current.mode as Mode,current.day));
    return {sides,players};
  };
- const competitionSide=(participant:Participant,players:Player[],mode:Mode,day:number,careerId:string,protectedIds=ownedIds(careerId)):MatchSide=>{
-   const lineup=participant.id==='career'?careerLineup(players.filter(player=>player.mode===mode),contractsFor(careerId)):rivalLineup(players,participant.id,mode,day);
-   if(participant.id!=='career'&&lineup.some(slot=>protectedIds.has(slot.player.id)))throw Error('Vínculo conflitante no elenco rival.');
+ const competitionSide=(participant:Participant,players:Player[],mode:Mode,day:number,careerId:string,protectedIds=ownedIds(careerId),region?:MobaRegion):MatchSide=>{
+   const loans=loansFor(careerId),sport=loanPlayers(players,loans,day);
+   const lineup=participant.id==='career'?careerLineup(sport.filter(player=>player.mode===mode),loanContracts(sport,contractsFor(careerId),loans,day)):
+     region?registeredMobaLineup(sport,participant.id,day,region):
+     rivalLineup(sport,participant.id,mode,day);
+   const outgoing=new Set(activeLoans(loans,day).filter(loan=>loan.destination===participant.id).map(loan=>loan.player_id));
+   if(participant.id!=='career'&&lineup.some(slot=>protectedIds.has(slot.player.id)&&!outgoing.has(slot.player.id)))throw Error('Vínculo conflitante no elenco rival.');
    if(participant.id!=='career')return {...participant,lineup};
    const current=get(careerId)!;
    return {...participant,identity:current.identity??{...defaultIdentity,primary:current.color,symbol:current.symbol},lineup};
@@ -194,7 +206,7 @@ async function handleRequest(event:MessageEvent){
      const edition=season.editions.find(e=>e.fixtures.some(g=>isScheduledFixture(g)&&g.day<=day&&g.home!=='career'&&g.away!=='career'));
      const game=edition?.fixtures.find(g=>isScheduledFixture(g)&&g.day<=day&&g.home!=='career'&&g.away!=='career');
      if(!edition||!game)break;
-     const teams=[game.home,game.away].map(id=>competitionSide(edition.participants.find(p=>p.id===id)!,players,edition.mode,day,careerId,protectedIds)) as [MatchSide,MatchSide];
+     const teams=[game.home,game.away].map(id=>competitionSide(edition.participants.find(p=>p.id===id)!,players,edition.mode,day,careerId,protectedIds,edition.importRegion)) as [MatchSide,MatchSide];
      const result=playCompetitionFixture(season,game.id,day,teams,seed);
      for(const map of result.maps)players=applyMatchConditions(players,map);
    }
@@ -297,9 +309,45 @@ async function handleRequest(event:MessageEvent){
      bind:[input,seed,generationVersion,JSON.stringify(players)]});
  }
  const discovered=new Set(db.selectObjects('SELECT DISTINCT player_id FROM web_contracts WHERE career_id=?',[input]).map(row=>Number(row.player_id)));
- result=players.map(player=>({...publicPlayer(player,discovered.has(player.id)),condition:{...playerCondition(player,day),day}}));
+ const loaned=new Set(activeLoans(loansFor(input),day).map(loan=>loan.player_id));
+ result=players.map(player=>({...publicPlayer(player,discovered.has(player.id)),onLoan:loaned.has(player.id),condition:{...playerCondition(player,day),day}}));
  }else if(action==='contracts'){
- result=contractsFor(input);
+ const loans=loansFor(input),day=get(input)!.day;
+ result=activeLoans(loans,day).length?loanContracts(await marketPlayers(input),contractsFor(input),loans,day):contractsFor(input);
+ }else if(action==='loans'){
+ result=loansFor(input);
+ }else if(action==='loan-clubs'){
+ const catalog=await loadWorld(),career=get(input)!;
+ const leagues=new Set(catalog.leagues.filter(league=>league.discipline===career.mode).map(league=>league.id));
+ result=catalog.teams.filter(team=>!team.academy&&team.id!==career.entry?.displacedTeamId&&leagues.has(team.league)).map(({id,name})=>({id,name}));
+ }else if(action==='import-region'){
+ result=latestSeason(read,input)?.editions.find(edition=>edition.importRegion&&edition.participants.some(team=>team.id==='career'))?.importRegion??null;
+ }else if(action==='create-loan'){
+ const {careerId,playerId,teamId,days}=input;
+ if(!loanPeriods.includes(days))throw Error('Escolha 30, 60 ou 90 dias para o empréstimo.');
+ const players=await marketPlayers(careerId),catalog=await loadWorld(),career=get(careerId)!;
+ const player=players.find(row=>row.id===playerId),team=catalog.teams.find(row=>row.id===teamId&&!row.academy);
+ const start=career.day,end=start+days-1,loans=loansFor(careerId),active=activeLoans(loans,start);
+ if(!player||player.status||player.mode!==career.mode||!team||team.id===career.entry?.displacedTeamId||catalog.leagues.find(row=>row.id===team.league)?.discipline!==career.mode)
+   throw Error('Atleta ou equipe incompatível.');
+ if(active.some(row=>row.player_id===playerId))throw Error('Este atleta já está emprestado.');
+ const contracts=contractsFor(careerId),owned=contracts.find(row=>row.player_id===playerId);
+ const sport=loanPlayers(players,loans,start);
+ if(owned){
+   if(owned.starter||owned.academy||owned.end_day<end)throw Error('Empreste um reserva com contrato válido durante todo o período.');
+   if(sport.filter(row=>row.team===teamId&&!row.status).length>=10)throw Error('O clube de destino já tem dez atletas.');
+ }else{
+   if(player.team!==teamId||!player.organization)throw Error('O clube indicado não possui este atleta.');
+   const remaining=sport.filter(row=>row.team===teamId&&!row.status&&row.id!==playerId);
+   if(!remaining.some(row=>row.role===player.role)||
+      (player.mode==='MOBA'&&eligibleMobaLineup(remaining.map(row=>({player:row,role:row.role,startDay:start})),leagueMobaRegion(team.league)).length!==5))
+     throw Error('O clube de origem precisa manter uma escalação elegível.');
+   if(loanContracts(sport,contracts,loans,start).filter(row=>!row.academy).length>=10)throw Error('Seu elenco principal já tem dez atletas.');
+ }
+ const season=latestSeason(read,careerId);
+ if(season&&start<=season.endDay&&end>season.endDay)throw Error('O empréstimo deve terminar dentro da temporada atual.');
+ run('INSERT INTO web_loans VALUES(?,?,?,?,?,?,?,0)',[careerId,playerId,owned?'career':teamId,owned?teamId:'career',team.name,start,end]);
+ result=get(careerId);
  }else if(action==='lineup-favorites'){
    result=all('SELECT id,name,players FROM web_lineup_favorites WHERE career_id=? ORDER BY name,id',[input]).map(row=>({id:row.id,name:row.name,playerIds:favoriteIds(JSON.parse(String(row.players)))}));
  }else if(action==='lineup-favorite-create'){
@@ -321,12 +369,39 @@ async function handleRequest(event:MessageEvent){
    if(players){
      const current=get(careerId)!;
      const ids=JSON.parse(String(favorite.players));
-     validateFavoritePlayers(ids,current.mode as Mode,players,contractsFor(careerId));
+     const loans=activeLoans(loansFor(careerId),current.day);
+     if(loans.some(loan=>ids.includes(loan.player_id)||loan.destination==='career'&&loan.starter))
+       throw Error('Ajuste a escalação manualmente enquanto houver atletas emprestados nestas posições.');
+     const contracts=contractsFor(careerId);
+     validateFavoritePlayers(ids,current.mode as Mode,players,contracts);
+     const region=latestSeason(read,careerId)?.editions.find(edition=>edition.importRegion&&edition.participants.some(team=>team.id==='career'))?.importRegion;
+     if(region&&players.filter(player=>ids.includes(player.id)&&mobaImports([{player,role:player.role,startDay:current.day}],region)).length>regionalPolicies[region].limit)
+       throw Error('A escalação favorita supera o limite regional de importados.');
      applyFavorite(run,read,careerId,ids,()=>contractsFor(careerId));
    }
    result=get(careerId);
  }else if(action==='starter'){
- selectStarter((sql,bind)=>{db.exec({sql,bind});},(sql,bind)=>db.selectObject(sql,bind),input.careerId,input.playerId);
+ const id=input.careerId,day=get(id)!.day,loans=activeLoans(loansFor(id),day);
+ const assignment=loans.find(row=>row.player_id===input.playerId);
+ if(assignment?.origin==='career')throw Error('O atleta está emprestado.');
+ const region=latestSeason(read,id)?.editions.find(edition=>edition.importRegion&&edition.participants.some(team=>team.id==='career'))?.importRegion;
+ const players=loans.length||region?await marketPlayers(id):[],athlete=players.find(row=>row.id===input.playerId);
+ if(region&&athlete){
+   const current=careerLineup(players,loanContracts(players,contractsFor(id),loans,day));
+   const projected=[...current.filter(slot=>slot.role!==athlete.role),{player:athlete,role:athlete.role,startDay:day}];
+   const count=mobaImports(projected,region);
+   if(count>regionalPolicies[region].limit&&count>=mobaImports(current,region))throw Error('A escalação MOBA ficaria acima do limite regional de importados.');
+ }
+ if(assignment){
+   db.transaction(()=>{
+     for(const other of loans.filter(row=>row.destination==='career'&&players.find(p=>p.id===row.player_id)?.role===athlete?.role))
+       run('UPDATE web_loans SET starter=? WHERE career_id=? AND player_id=? AND start_day=?',[Number(other.player_id===input.playerId),id,other.player_id,other.start_day]);
+   });
+ }else{
+   selectStarter(run,read,id,input.playerId);
+   for(const other of loans.filter(row=>row.destination==='career'&&players.find(p=>p.id===row.player_id)?.role===athlete?.role))
+     run('UPDATE web_loans SET starter=0 WHERE career_id=? AND player_id=? AND start_day=?',[id,other.player_id,other.start_day]);
+ }
  result=true;
  }else if(action==='training'){
  const owned=ownedIds(input);
@@ -380,7 +455,8 @@ async function handleRequest(event:MessageEvent){
  const old=latestSeason(read,input),players=await marketPlayers(input),catalog=await loadWorld();
  const config=JSON.parse(String(read('SELECT data FROM web_competition_config WHERE career_id=?',[input])?.data??JSON.stringify(defaultCompetitionConfig)));
  const bonuses=Object.fromEntries(all('SELECT organization,SUM(reputation) gain FROM web_competition_awards WHERE career_id=? GROUP BY organization',[input]).map(row=>[String(row.organization),Number(row.gain)]));
- const season=generateSeason(current,catalog,players,contractsFor(input),(old?.number??0)+1,nextSeasonStart(old,current.day),config,bonuses,old);
+ const start=nextSeasonStart(old,current.day),loans=loansFor(input),sport=loanPlayers(players,loans,start);
+ const season=generateSeason(current,catalog,sport,loanContracts(sport,contractsFor(input),loans,start),(old?.number??0)+1,start,config,bonuses,old,true);
  storeNewSeason(run,read,input,season);result=season;
  }else if(action==='play-competition'){
  const season=latestSeason(read,input.careerId),current=get(input.careerId)!;
@@ -393,7 +469,7 @@ async function handleRequest(event:MessageEvent){
  const seed=Number(db.selectValue('SELECT seed FROM web_career_world WHERE career_id=?',[input.careerId]));
  db.transaction(()=>{
    players=maintainRosters(players,catalog,ownedIds(input.careerId),current.day,aiHiring(input.careerId,current.day));
-   const teams=[game.home,game.away].map(id=>competitionSide(edition.participants.find(p=>p.id===id)!,players,edition.mode,current.day,input.careerId)) as [MatchSide,MatchSide];
+   const teams=[game.home,game.away].map(id=>competitionSide(edition.participants.find(p=>p.id===id)!,players,edition.mode,current.day,input.careerId,undefined,edition.importRegion)) as [MatchSide,MatchSide];
    const series=playCompetitionFixture(season,input.id,current.day,teams,seed);
    for(const map of series.maps)players=applyMatchConditions(players,map);
    players=processAI(season,current.day,players,input.careerId,ownedIds(input.careerId),seed);
@@ -447,16 +523,19 @@ async function handleRequest(event:MessageEvent){
  if(![1,7,30].includes(input.days))throw Error('Escolha 1, 7 ou 30 dias.');
  const advancingCareer=get(input.careerId)!;
  const marketCatalog=await loadWorld(),competition=latestSeason(read,input.careerId);
+ const seasonLoans=loansFor(input.careerId);
+ const regionalTeams=new Map(marketCatalog.teams.filter(team=>marketCatalog.leagues.some(league=>league.id===team.league&&league.discipline==='MOBA')).map(team=>[team.id,leagueMobaRegion(team.league)]));
+ const careerRegion=competition?.editions.find(edition=>edition.importRegion&&edition.participants.some(team=>team.id==='career'))?.importRegion;
  const {days,stoppedAt}=planCompetitionAdvance(competition,input.expectedDay,input.days);
  if(!days)throw Error('Nenhum dia avançado. Dispute o confronto pendente antes de avançar.');
  let players=await marketPlayers(input.careerId);
  const seed=Number(db.selectValue('SELECT seed FROM web_career_world WHERE career_id=?',[input.careerId]));
  const report=advanceCareerDay(run,read,all,input.careerId,input.expectedDay,days,(from,to)=>{
    run("UPDATE web_negotiations SET state='expired' WHERE career_id=? AND expires_day<? AND state IN ('accepted','counter')",[input.careerId,to]);
-   const contracts=all(`SELECT player_id,start_day,MIN(end_day,COALESCE((SELECT day-1 FROM web_contract_closures x
+   const contracts=all(`SELECT player_id,start_day,salary,MIN(end_day,COALESCE((SELECT day-1 FROM web_contract_closures x
      WHERE x.career_id=c.career_id AND x.player_id=c.player_id AND x.start_day=c.start_day),end_day)) end_day
      FROM web_contracts c WHERE career_id=? AND start_day<=? AND end_day>=?`,[input.careerId,to,from])
-     .map(row=>({player_id:Number(row.player_id),start_day:Number(row.start_day),end_day:Number(row.end_day)})).filter(c=>c.end_day>=from);
+     .map(row=>({player_id:Number(row.player_id),start_day:Number(row.start_day),end_day:Number(row.end_day),salary:Number(row.salary)})).filter(c=>c.end_day>=from);
    const training=new Map(all('SELECT player_id,focus,academy,changed_day FROM web_player_training WHERE career_id=?',[input.careerId])
      .map(row=>[Number(row.player_id),row as unknown as PlayerTraining]));
    const facilityLevels=Object.fromEntries(all('SELECT kind,level FROM web_facilities WHERE career_id=?',[input.careerId]).map(row=>[String(row.kind),Number(row.level)])) as Partial<FacilityLevels>;
@@ -482,7 +561,9 @@ async function handleRequest(event:MessageEvent){
        return monthly?observeOverall(updated,day):updated;
      });
      if(day%30===0){syncAiAccounts(run,read,all,input.careerId,players,marketCatalog.organizations.map(org=>org.id),day);payAiSalaries(run,all,input.careerId,day);}
-     if(annual.includes(day))players=renewWorld(players,seed,day,contracts,aiHiring(input.careerId,day));
+     const currentLoans=activeLoans(seasonLoans,day);
+     const loaned=new Set(currentLoans.map(row=>row.player_id));
+     if(annual.includes(day))players=renewWorld(players,seed,day,[...contracts,...currentLoans],aiHiring(input.careerId,day));
      const protectedIds=new Set([...legacy,...contracts.filter(c=>c.start_day<=day&&c.end_day>=day).map(c=>c.player_id)]);
      recordDevelopmentNews(run,read,{...advancingCareer,day},beforeDevelopment,players,day,protectedIds);
      players=processMoodEvent(run,read,input.careerId,players,protectedIds,day,seed);
@@ -490,18 +571,56 @@ async function handleRequest(event:MessageEvent){
        players=maintainRosters(players,marketCatalog,protectedIds,day,aiHiring(input.careerId,day));
        players=processAI(competition,day,players,input.careerId,protectedIds,seed);
      }
+     if(day%28===0&&competition){
+       const fixtures=contractFixtures(competition,day),indexed=new Map(players.map(player=>[player.id,player]));
+       for(const contract of contracts){
+         const athlete=indexed.get(contract.player_id);
+         if(!athlete||day<contract.start_day||day>contract.end_day)continue;
+         const key=[input.careerId,contract.player_id,contract.start_day];
+         const expectation=read('SELECT squad_role,promised_day FROM web_contract_expectations WHERE career_id=? AND player_id=? AND start_day=?',key);
+         const objective=withPersonalObjective(athlete,day).personalObjective;
+         if(expectation){
+           const participation=contractParticipation(fixtures,athlete.id,athlete.mode,Math.max(day-27,Number(expectation.promised_day)+1));
+           const changed=expectationDelta(expectation.squad_role as SquadRole,participation,!!training.get(athlete.id)?.academy,objective);
+           if(changed){
+             const condition=playerCondition(athlete,day);
+             indexed.set(athlete.id,{...athlete,condition:{...condition,day,morale:Math.max(0,Math.min(100,condition.morale+changed))}});
+           }
+         }
+         const previous=read('SELECT day,state FROM web_renewal_requests WHERE career_id=? AND player_id=? AND start_day=? ORDER BY day DESC LIMIT 1',key);
+         if(previous?.state==='pending')continue;
+         const lastRenewal=read("SELECT MAX(day) day FROM web_market_moves WHERE career_id=? AND player_id=? AND day>=? AND kind='renewed'",key);
+         const since=Math.max(contract.start_day,Number(lastRenewal?.day??0),Number(previous?.day??0));
+         if(day-since<90)continue;
+         const baseline=athlete.developmentHistory?.find(point=>point.day>=since&&point.day<=day-90);
+         if(!baseline)continue;
+         const participation=contractParticipation(fixtures,athlete.id,athlete.mode,Math.max(since+1,day-59));
+         const gain=Math.round((athlete.overall-baseline.overall)*100)/100;
+         const benchmark=terms(athlete.overall).salary;
+         if(renewalGrounds({...participation,gain,elapsed:day-since,salary:contract.salary,benchmark})&&
+            (!expectation||expectationDelta(expectation.squad_role as SquadRole,participation,!!training.get(athlete.id)?.academy,objective)>=0)&&
+            (objective!=='stability'||contract.end_day-day<=180||gain>=4)){
+           run("INSERT OR IGNORE INTO web_renewal_requests VALUES(?,?,?,?,?,?,?,?,'pending')",
+             [...key,day,gain,participation.played,participation.available,benchmark]);
+         }
+       }
+       players=Array.from(indexed.values());
+     }
      if(day%marketLimits.interval===0&&!read('SELECT 1 FROM web_ai_market_days WHERE career_id=? AND day=?',[input.careerId,day])){
        const id=input.careerId;
        run('INSERT INTO web_ai_market_days VALUES(?,?)',[id,day]);
        const owners=new Map([...protectedIds].map(playerId=>[playerId,(contracts.find(c=>c.player_id===playerId&&c.end_day>=day)?.end_day??day+365)-day]));
        const blocked=new Set(all("SELECT player_id FROM web_negotiations WHERE career_id=? AND expires_day>=? AND state IN ('accepted','counter')",[id,day]).map(row=>Number(row.player_id)));
+       for(const playerId of loaned)blocked.add(playerId);
        const bids=marketApproaches(players,marketCatalog,owners,competitiveEvidence(competition,day),approaches(id,day),seed,day,
          (org,player,fee)=>aiCanBuy(read,id,org,player,fee),marketLimits,blocked);
        const indexed=new Map(players.map(player=>[player.id,player]));
        const signed=new Map<number,Approach>();
        for(const bid of bids){
          const athlete=indexed.get(bid.playerId)!;
-         const covered=players.some(player=>player.id!==athlete.id&&!signed.has(player.id)&&player.team===athlete.team&&player.role===athlete.role&&!player.status);
+         const available=players.filter(player=>player.id!==athlete.id&&!signed.has(player.id)&&!loaned.has(player.id)&&player.team===athlete.team&&!player.status);
+         const region=athlete.mode==='MOBA'&&athlete.team&&competition?.editions.some(edition=>edition.importRegion&&edition.participants.some(team=>team.id===athlete.team))?regionalTeams.get(athlete.team):undefined;
+         const covered=available.some(player=>player.role===athlete.role)&&(!region||eligibleMobaLineup(available.map(player=>({player,role:player.role,startDay:day})),region).length===5);
          if(bid.seller!=='career'&&covered&&aiCanBuy(read,id,bid.organization,athlete,bid.fee)){
            aiPurchase(run,read,id,bid.organization,athlete,bid.fee,day);
            aiReceiveTransfer(run,id,bid.seller,athlete,bid.fee,'ai:'+bid.organization+':'+athlete.id+':'+day,day);
@@ -512,6 +631,16 @@ async function handleRequest(event:MessageEvent){
        if(signed.size)players=players.map(player=>{
          const bid=signed.get(player.id);
          return bid?{...player,organization:bid.organization,team:bid.team,history:[{day,description:'Transferido para '+bid.name+'.'},...(player.history??[])]}:player;
+       });
+     }
+     if(careerRegion&&competition&&day>=competition.startDay){
+       const assigned=new Map(currentLoans.map(loan=>[loan.player_id,loan.destination]));
+       players=players.map(player=>{
+         if(player.mode!=='MOBA'||player.status||training.get(player.id)?.academy)return player;
+         const team=assigned.get(player.id)??(protectedIds.has(player.id)?'career':player.team);
+         const region=team==='career'?careerRegion:team?regionalTeams.get(team):undefined;
+         if(!region||(player.mobaTenure?.[region]??0)>=regionalPolicies[region].days)return player;
+         return {...player,mobaTenure:{...player.mobaTenure,[region]:(player.mobaTenure?.[region]??0)+1}};
        });
      }
    }
@@ -525,31 +654,74 @@ async function handleRequest(event:MessageEvent){
  report.balance=Number(get(input.careerId)?.balance);
  result={report:{...report,advancedDays:days,requestedDays:input.days,blockedFixtureId:stoppedAt?.id},career:get(input.careerId)};
  }else if(action==='negotiations'){
- result=db.selectObjects(`SELECT n.*,COALESCE(q.fee,0) transfer_fee FROM web_negotiations n LEFT JOIN web_transfer_quotes q ON q.negotiation_id=n.id
+ result=db.selectObjects(`SELECT n.*,COALESCE(q.fee,0) transfer_fee,t.squad_role,t.estimated_fee,t.asking_fee FROM web_negotiations n LEFT JOIN web_transfer_quotes q ON q.negotiation_id=n.id
+   LEFT JOIN web_negotiation_terms t ON t.negotiation_id=n.id
    WHERE n.career_id=? ORDER BY opened_day DESC,n.rowid DESC`,[input]);
  }else if(action==='sale-options'){
  const players=await marketPlayers(input.careerId);
  const player=players.find(p=>p.id===input.playerId);
  if(!player||!ownedIds(input.careerId).has(player.id))throw Error('O atleta não faz parte deste elenco.');
  result=offersFor(input.careerId,get(input.careerId)!.day,player,await loadWorld(),players);
+ }else if(action==='market-overview'){
+ const current=get(input);if(!current)throw Error('Carreira não encontrada.');
+ const players=await marketPlayers(input);
+ const seasons=all('SELECT data FROM web_competition_seasons WHERE career_id=?',[input]).map(row=>JSON.parse(String(row.data)) as Season);
+ result={targets:all('SELECT player_id FROM web_market_targets WHERE career_id=? ORDER BY player_id',[input]).map(row=>Number(row.player_id)),
+   usage:marketUsage(seasons,current.day,players)};
+ }else if(action==='market-target'){
+ const {careerId,playerId,tracked}=input;
+ if(!get(careerId)||!Number.isSafeInteger(playerId)||typeof tracked!=='boolean')throw Error('Alvo inválido.');
+ if(tracked){
+   if(!(await marketPlayers(careerId)).some(player=>player.id===playerId))throw Error('Atleta indisponível.');
+   run('INSERT OR IGNORE INTO web_market_targets VALUES(?,?)',[careerId,playerId]);
+ }else run('DELETE FROM web_market_targets WHERE career_id=? AND player_id=?',[careerId,playerId]);
+ result=all('SELECT player_id FROM web_market_targets WHERE career_id=? ORDER BY player_id',[careerId]).map(row=>Number(row.player_id));
+ }else if(action==='incoming-approach-history'){
+ const career=get(input);if(!career)throw Error('Carreira não encontrada.');
+ const owned=ownedIds(input);
+ result=all("SELECT data FROM web_ai_approaches WHERE career_id=? AND json_extract(data,'$.seller')='career' ORDER BY day DESC,buyer",[input])
+   .map(row=>JSON.parse(String(row.data)) as Approach)
+   .map(offer=>offer.state==='open'&&(offer.expires<career.day||!owned.has(offer.playerId))?{...offer,state:'expired'}:offer);
  }else if(action==='incoming-approaches'){
  const day=get(input)!.day,owned=ownedIds(input);
  result=approaches(input,day).filter(row=>row.seller==='career'&&row.state==='open'&&row.expires>=day&&owned.has(row.playerId));
  }else if(action==='decline-approach'){
  const day=get(input.careerId)!.day;
- const offer=approaches(input.careerId,day,input.playerId).find(row=>row.team===input.team&&row.seller==='career'&&row.state==='open'&&row.expires>=day);
+ const offer=approaches(input.careerId,day,input.playerId).find(row=>row.team===input.team&&row.seller==='career'&&row.state==='open'&&row.expires>=day&&
+   (input.offerDay===undefined||input.offerDay===row.day));
  if(!offer)throw Error('Proposta indisponível.');
  setApproach(input.careerId,offer,'declined');result=true;
  }else if(action==='market-moves'){
  result=all('SELECT player_id,day,kind,amount,description FROM web_market_moves WHERE career_id=? ORDER BY day DESC,rowid DESC LIMIT 100',[input]);
+ }else if(action==='contract-alerts'){
+ const day=get(input)!.day;
+ result=all(`SELECT c.player_id,c.start_day,c.end_day FROM web_contracts c
+   WHERE c.career_id=? AND c.start_day<=? AND c.end_day BETWEEN ? AND ?
+   AND NOT EXISTS(SELECT 1 FROM web_contract_closures x WHERE x.career_id=c.career_id AND x.player_id=c.player_id AND x.start_day=c.start_day)
+   AND NOT EXISTS(SELECT 1 FROM web_contracts n WHERE n.career_id=c.career_id AND n.player_id=c.player_id AND n.start_day>c.start_day)
+   ORDER BY c.end_day,c.player_id`,[input,day,day-30,day+180])
+   .map(row=>({...row,level:expiryLevel(Number(row.end_day)-day)}));
+ }else if(action==='renewal-requests'){
+ result=all(`SELECT r.* FROM web_renewal_requests r JOIN web_current_contracts c
+   ON c.career_id=r.career_id AND c.player_id=r.player_id AND c.start_day=r.start_day
+   WHERE r.career_id=? AND r.state='pending' ORDER BY r.day DESC,r.player_id`,[input]);
+ }else if(action==='decline-renewal'){
+ const {careerId,playerId,startDay,day}=input;
+ run("UPDATE web_renewal_requests SET state='declined' WHERE career_id=? AND player_id=? AND start_day=? AND day=? AND state='pending'",
+   [careerId,playerId,startDay,day]);
+ result=true;
  }else if(action==='renew-contract'){
- renewContract(run,read,all,input.careerId,input.playerId,input.salary,input.days);
+ renewContract(run,read,all,input.careerId,input.playerId,input.salary,input.days,input.squadRole);
  result=get(input.careerId);
  }else if(action==='depart-player'){
  const players=await marketPlayers(input.careerId),catalog=await loadWorld();
  const player=players.find(p=>p.id===input.playerId);
  if(!player)throw Error('Atleta não encontrado.');
- const buyer=input.team?offersFor(input.careerId,get(input.careerId)!.day,player,catalog,players).find(option=>option.team===input.team):undefined;
+ const day=get(input.careerId)!.day;
+ if(activeLoans(loansFor(input.careerId),day).some(row=>row.player_id===player.id))throw Error('Aguarde o fim do empréstimo.');
+ const buyer=input.offerDay!==undefined
+   ?approaches(input.careerId,day,player.id).find(offer=>offer.team===input.team&&offer.seller==='career'&&offer.state==='open'&&offer.day===input.offerDay&&offer.expires>=day)
+   :input.team?offersFor(input.careerId,day,player,catalog,players).find(option=>option.team===input.team):undefined;
  if(input.team&&!buyer)throw Error('A proposta de compra não está mais disponível.');
  departPlayer(run,read,all,input.careerId,player,buyer,day=>{
    if(buyer){
@@ -566,13 +738,16 @@ async function handleRequest(event:MessageEvent){
  });
  result=get(input.careerId);
  }else if(action==='cancel-offer'){
- db.exec({sql:"UPDATE web_negotiations SET state='cancelled' WHERE career_id=? AND id=? AND state IN ('accepted','counter')",bind:[input.careerId,input.id]});
+ const day=get(input.careerId)?.day;
+ if(day===undefined||!read("SELECT 1 FROM web_negotiations WHERE career_id=? AND id=? AND expires_day>=? AND state IN ('accepted','counter')",[input.careerId,input.id,day]))throw Error('A proposta não está mais disponível.');
+ run("UPDATE web_negotiations SET state='cancelled' WHERE career_id=? AND id=?",[input.careerId,input.id]);
  result=true;
  }else if(action==='submit-offer'||action==='confirm-offer'){
  const playerId=action==='confirm-offer'?db.selectValue('SELECT player_id FROM web_negotiations WHERE career_id=? AND id=?',[input.careerId,input.id]):input.playerId;
  const world=await marketPlayers(input.careerId);
  const catalog=await loadWorld();
  const player=world.find(candidate=>candidate.id===playerId);
+ if(activeLoans(loansFor(input.careerId),get(input.careerId)!.day).some(row=>row.player_id===playerId))throw Error('Aguarde o fim do empréstimo.');
  if(!player)throw Error('Jogador não encontrado.');
  const legacy=db.selectObjects(`SELECT p.player_id,p.data,p.starter FROM web_imported_players p
    WHERE p.career_id=? AND p.member=1 AND NOT EXISTS(SELECT 1 FROM web_contracts c WHERE c.career_id=p.career_id AND c.player_id=p.player_id)`,[input.careerId]);
@@ -592,7 +767,7 @@ async function handleRequest(event:MessageEvent){
  if(action==='submit-offer'){
    const displaced=catalog.teams.find(team=>team.id===get(input.careerId)?.entry?.displacedTeamId);
    const reputation=Math.max(get(input.careerId)?.reputation??40,catalog.organizations.find(org=>org.id===displaced?.organization)?.reputation??40);
-   result=submitOffer(run,read,input.careerId,crypto.randomUUID(),player,input.offer,{reputation});
+   result=submitOffer(run,read,input.careerId,crypto.randomUUID(),player,input.offer,{reputation,replyTo:input.replyTo,askingFee:sellerAskingPrice(player,world)});
  }else{
    confirmOffer(run,read,input.careerId,input.id,player,legacyStarter,onSigned);
    result=get(input.careerId);
