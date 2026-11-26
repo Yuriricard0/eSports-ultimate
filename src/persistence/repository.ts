@@ -16,6 +16,11 @@ import type {PlayerMilestone} from '../game-core/player-milestones';
 import type {ContractAlert,RenewalRequest,SquadRole} from '../game-core/contract-expectations';
 import type {Loan} from '../game-core/loans';
 import type {MobaRegion} from '../game-core/moba-eligibility';
+import type {RankedObservation} from '../game-core/talent-development';
+import type {SoloSeason,WeeklyClimber,WeeklyRankings} from '../game-core/solo-queue';
+import type {AcademySnapshot,Tryout} from '../game-core/academy-evaluation';
+import type {Activity,TrainingEvent,TrainingSlot,WeekModel} from '../game-core/training-week';
+import type {Mode} from '../game-core/attributes';
 let worker:Worker;
 let storageFailure:Error|undefined;
 let sequence=0;
@@ -36,7 +41,8 @@ export async function initialize(){
 const saveActions=new Set(['delete','create','import','identity','rename','starter','prepare-match','play-match','cancel-match',
  'start-season','competition-config','play-competition','sponsor-accept','sponsor-reject','facility-upgrade','assign-academy',
  'set-training','submit-offer','confirm-offer','cancel-offer','renew-contract','decline-renewal','depart-player','advance',
- 'lineup-favorite-create','lineup-favorite-rename','lineup-favorite-delete','lineup-favorite-apply','create-loan']);
+ 'lineup-favorite-create','lineup-favorite-rename','lineup-favorite-delete','lineup-favorite-apply','create-loan','start-tryout','dismiss-tryout','youth-coach',
+ 'training-model-save','training-model-rename','training-model-delete','training-week-apply','training-event-plan','training-event-complete','training-event-cancel']);
 function request<T>(action:string,input?:unknown):Promise<T>{
  const send=()=>new Promise<T>((resolve,reject)=>{
  if(storageFailure){reject(storageFailure);return;}
@@ -60,6 +66,27 @@ export const listLoans=(id:string)=>request<Loan[]>('loans',id);
 export const listLoanClubs=(id:string)=>request<{id:string;name:string}[]>('loan-clubs',id);
 export const createLoan=(careerId:string,playerId:number,teamId:string,days:number)=>request<Career>('create-loan',{careerId,playerId,teamId,days});
 export const listImportRegion=(id:string)=>request<MobaRegion|null>('import-region',id);
+type RankedWatch={ids:number[];history:RankedObservation[]};
+export const listRankedWatch=(id:string)=>request<RankedWatch>('ranked-watch',id);
+export const getSoloQueue=(id:string)=>request<{seasons:SoloSeason[];comparison:{from:number;to:number;climbers:WeeklyClimber[]}|null}>('solo-queue',id);
+export const getSoloFinal=(careerId:string,startDay:number)=>request<WeeklyRankings>('solo-final',{careerId,startDay});
+export type AcademyEvaluation={snapshots:AcademySnapshot[];tryouts:Tryout[];competitive:{day:number;mode:string;won:boolean;appearances:[number,number][]}[];coach:boolean;coachAvailable:boolean};
+export const getAcademyEvaluation=(id:string)=>request<AcademyEvaluation>('academy-evaluation',id);
+export const specializeYouthCoach=(careerId:string,enabled:boolean)=>request<boolean>('youth-coach',{careerId,enabled});
+export const startTryout=(careerId:string,playerId:number,days:number)=>request<boolean>('start-tryout',{careerId,playerId,days});
+export const dismissTryout=(careerId:string,playerId:number,startDay:number)=>request<boolean>('dismiss-tryout',{careerId,playerId,startDay});
+export type TrainingWeek={events:TrainingEvent[];models:WeekModel[];opponents:{id:string;name:string}[];facilities:Record<string,number>;
+ schedule:{day:number;mode:Mode;name:string;done:boolean;fixture:string;kind:'official'|'friendly'}[]};
+export type TrainingAgendaItem={day:number;mode:Mode;kind:Activity};
+export const getTrainingWeek=(id:string)=>request<TrainingWeek>('training-week',id);
+export const getTrainingAgenda=(id:string)=>request<TrainingAgendaItem[]>('training-agenda',id);
+export const planTrainingEvent=(careerId:string,start:number,slot:TrainingSlot)=>request<boolean>('training-event-plan',{careerId,start,slot});
+export const updateTrainingEvent=(careerId:string,day:number,action:'complete'|'cancel')=>request<Career>('training-event-'+action,{careerId,day});
+export const saveTrainingModel=(careerId:string,name:string,slots:TrainingSlot[])=>request<boolean>('training-model-save',{careerId,name,slots});
+export const updateTrainingModel=(careerId:string,id:string,action:'rename'|'delete',name?:string)=>request<boolean>('training-model-'+action,{careerId,id,name});
+export const applyTrainingModel=(careerId:string,modelId:string,start:number)=>request<boolean>('training-week-apply',{careerId,modelId,start});
+export const listRankedPlayerHistory=(careerId:string,playerId:number)=>request<RankedObservation[]>('ranked-player-history',{careerId,playerId});
+export const setRankedWatch=(careerId:string,playerId:number,tracked:boolean)=>trackSave(()=>request<RankedWatch>('set-ranked-watch',{careerId,playerId,tracked}));
 export const setStarter=(careerId:string,playerId:number)=>request<boolean>('starter',{careerId,playerId});
 export const listFavoriteLineups=(careerId:string)=>request<FavoriteLineup[]>('lineup-favorites',careerId);
 export const createFavoriteLineup=(careerId:string,name:string)=>request<boolean>('lineup-favorite-create',{careerId,name});

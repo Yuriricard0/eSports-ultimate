@@ -1,6 +1,8 @@
 import {useEffect,useRef,useState} from 'react';
 import {PlayerPortrait} from './PlayerPortrait';
 import {PlayerAnalysis} from './PlayerAnalysis';
+import {RankedHistory} from './RankedWatch';
+import type {RankedObservation} from '../game-core/talent-development';
 import {attributeLabels,roleNames} from './player-labels';
 import {analyzeRoles,playerMarkers} from '../game-core/player-analysis';
 import {athleteAge,playerCondition} from '../game-core/development';
@@ -10,7 +12,7 @@ import {styleOf} from '../game-core/team-analysis';
 import {personalObjectiveNames} from '../game-core/player-identity';
 import {playerMilestones,type PlayerMilestone} from '../game-core/player-milestones';
 import {currentPlayerSituation} from '../game-core/news';
-import {listPlayerMilestones} from '../persistence/repository';
+import {listPlayerMilestones,listRankedPlayerHistory} from '../persistence/repository';
 import type {Career} from '../game-core/career';
 import type {Contract,Player} from '../game-core/recruitment';
 
@@ -21,7 +23,15 @@ export function PlayerProfilePanel({player,players,career,contracts,organization
 }){
  const dialog=useRef<HTMLDialogElement>(null);
  const [full,setFull]=useState(startFull);
+ const [rankedHistory,setRankedHistory]=useState<RankedObservation[]>([]);
  const day=career?.day??1;
+ const careerId=career?.id;
+ useEffect(()=>{
+   if(!full||!careerId)return;
+   let active=true;
+   listRankedPlayerHistory(careerId,player.id).then(rows=>{if(active)setRankedHistory(rows);}).catch(()=>{if(active)setRankedHistory([]);});
+   return()=>{active=false;};
+ },[full,careerId,player.id,day]);
  useEffect(()=>{
    const element=dialog.current;
    if(!element)return;
@@ -51,6 +61,7 @@ export function PlayerProfilePanel({player,players,career,contracts,organization
      <p>Estilo de jogo · {styleOf(player)}{condition&&` · Forma ${Math.round(condition.form)} · Fadiga ${Math.round(condition.fatigue)}`}</p>
      {player.personalObjective&&<p>Objetivo pessoal · <strong>{personalObjectiveNames[player.personalObjective]}</strong></p>}
      <PlayerAnalysis player={player} players={players} day={day} attributeLabels={attributeLabels} roleNames={roleNames}/>
+     {rankedHistory.length>0&&<details><summary>Histórico de scouting na Solo Queue</summary><RankedHistory history={rankedHistory}/></details>}
      {!!knownPerks.length&&<details><summary>Descrição dos traços conhecidos</summary><ul>{knownPerks.map(perk=><li key={perk.id}>{perk.name} · {perk.description}</li>)}</ul></details>}
      <details><summary>Influência dos traços em partidas</summary>
        {player.perkInfluences?.length?<ul>{player.perkInfluences.slice().reverse().map((effect,index)=><li key={`${effect.day}:${effect.perkId}:${index}`}>

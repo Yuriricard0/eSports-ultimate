@@ -70,7 +70,7 @@ export function contractFixtures(season:Season|undefined,day:number){
        appearances.set(stat.playerId,Math.max(appearances.get(stat.playerId)??-Infinity,impact));
      }
    }
-   return [{day:result.completedDay,mode:edition.mode,appearances}];
+   return [{day:result.completedDay,mode:edition.mode,appearances,won:result.winner==='career'}];
  }));
 }
 

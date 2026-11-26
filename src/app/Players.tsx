@@ -1,8 +1,11 @@
 import {MarketNegotiations} from './MarketNegotiations';
 import {Loans} from './Loans';
+import {RankedHistory} from './RankedWatch';
+import {ScoutingReports,SoloQueueSeasons} from './SoloQueue';
+import type {RankedObservation} from '../game-core/talent-development';
 import {isMobaImport,regionalPolicies,type MobaRegion} from '../game-core/moba-eligibility';
 import {usageLabel,type MarketUsage} from '../game-core/market-overview';
-import {listContractAlerts,listImportRegion,listIncomingApproaches,loadMarketOverview,setMarketTarget} from '../persistence/repository';
+import {listContractAlerts,listImportRegion,listIncomingApproaches,listRankedWatch,loadMarketOverview,setMarketTarget,setRankedWatch} from '../persistence/repository';
 import {squadRoleNames,type ContractAlert} from '../game-core/contract-expectations';
 import type {Approach} from '../game-core/market-interest';
 import {RosterContracts} from './RosterContracts';
@@ -29,7 +32,7 @@ function playerAge(player:Player,day:number){
 }
 export {roleNames} from './player-labels';
 
-export function Players({career,players,contracts,organizations,view,onFinish,onStarter,onUpdated,initialPlayerId}:{
+export function Players({career,players,contracts,organizations,view,onFinish,onStarter,onUpdated,initialPlayerId,initialScouting=false}:{
   career:Career;
   players:Player[];
   contracts:Contract[];
@@ -39,6 +42,7 @@ export function Players({career,players,contracts,organizations,view,onFinish,on
   onStarter:(id:number)=>Promise<void>;
   onUpdated:(career:Career)=>Promise<void>;
   initialPlayerId?:number|null;
+  initialScouting?:boolean;
 }) {
   const scope=`${career.id}:${view}:`;
   const [search,setSearch]=useViewPreference(scope+'search','');
@@ -58,6 +62,18 @@ export function Players({career,players,contracts,organizations,view,onFinish,on
     return()=>{active=false;};
   },[view,career,incomingRevision]);
   const rankedView=view==='ranked';
+  const [watch,setWatch]=useState<{ids:number[];history:RankedObservation[]}|null>(null);
+  const [watchOnly,setWatchOnly]=useState(false);
+  const [scouting,setScouting]=useState(initialScouting);
+  const [watchBusy,setWatchBusy]=useState(false);
+  const [watchError,setWatchError]=useState('');
+  useEffect(()=>{
+    if(!rankedView)return;
+    let active=true;
+    listRankedWatch(career.id).then(value=>{if(active)setWatch(value);}).catch(reason=>{if(active)setWatchError(String(reason));});
+    return()=>{active=false;};
+  },[career,rankedView]);
+  const watchedIds=new Set(watch?.ids);
   const [mode,setMode]=useViewPreference(scope+'mode',rankedView||view==='market'?career.mode:'');
   const [contractAction,setContractAction]=useState<{player:Player;action:'renew'|'sell'|'release'}|null>(null);
   const [availability,setAvailability]=useViewPreference(scope+'availability','');
@@ -70,6 +86,7 @@ export function Players({career,players,contracts,organizations,view,onFinish,on
   const [profileId,setProfileId]=useState<number|null>(initialPlayerId??null);
   const profile=players.find(player=>player.id===profileId)??null;
   const setProfile=(player:Player|null)=>setProfileId(player?.id??null);
+  const profilePanel=profile&&<PlayerProfilePanel key={profile.id} player={profile} players={players} career={career} contracts={contracts} organizations={organizations} startFull={profile.id===initialPlayerId} onClose={()=>setProfile(null)}/>;
   const [selected,setSelected]=useState<Player[]>([]);
   const [comparing,setComparing]=useState(false);
   const byPlayer=new Map(contracts.map(contract=>[contract.player_id,contract]));
@@ -83,11 +100,11 @@ export function Players({career,players,contracts,organizations,view,onFinish,on
     }
   };
   const gains=new Map<number,number>();
-  const risingView=rankedView&&rising;
+  const risingView=rankedView&&!watchOnly&&rising;
   const filtered=players.filter(player=>{
     if(view==='roster' && player.mode!==career.mode) return false;
     if((view==='players'||rankedView||view==='market') && mode && player.mode!==mode) return false;
-    if(rankedView&&(player.status!=='ranked'||(country&&player.country!==country)))return false;
+    if(rankedView&&(watchOnly?!watchedIds.has(player.id):player.status!=='ranked'||(country&&player.country!==country)))return false;
     if(view==='players' && rankedOnly && player.status!=='ranked') return false;
     if(role && player.role!==role) return false;
     if(view==='roster' && (!byPlayer.has(player.id)||byPlayer.get(player.id)?.academy)) return false;
@@ -103,7 +120,7 @@ export function Players({career,players,contracts,organizations,view,onFinish,on
     (ascending?1:-1)*(sortValue(a)-sortValue(b))||a.id-b.id);
   const rankById=new Map<number,number>();
   if(rankedView){
-    const leaders=players.filter(player=>player.status==='ranked'&&player.mode===mode&&(!country||player.country===country))
+    const leaders=players.filter(player=>player.status==='ranked'&&player.mode===mode&&(watchOnly||!country||player.country===country))
       .sort((a,b)=>rankedStats(b).points-rankedStats(a).points||a.id-b.id);
     leaders.forEach((player,index)=>rankById.set(player.id,index+1));
   }
@@ -180,6 +197,14 @@ export function Players({career,players,contracts,organizations,view,onFinish,on
     {market&&marketToolbar}
     {marketError&&market&&<p className="market-error" role="alert">{marketError}</p>}
     {rankedView&&<p className="muted">Pontos e taxa de vitória simulados nesta carreira.</p>}
+    {rankedView&&<div className="market-toolbar">
+      <button aria-pressed={!scouting&&!watchOnly} onClick={()=>{setScouting(false);setWatchOnly(false);setPage(0);}}>Classificação</button>
+      <button aria-pressed={!scouting&&watchOnly} onClick={()=>{setScouting(false);setWatchOnly(true);setPage(0);}}>Observados ({watchedIds.size})</button>
+      <button aria-pressed={scouting} onClick={()=>setScouting(true)}>Scouting</button>
+    </div>}
+    {watchError&&rankedView&&<p role="alert">{watchError}</p>}
+    {rankedView&&scouting?<>{profilePanel}<ScoutingReports players={players} history={watch?.history??[]} onPlayer={setProfile}/></>:<>
+    {rankedView&&!watchOnly&&<SoloQueueSeasons careerId={career.id} day={career.day} players={players} mode={mode} onPlayer={setProfile}/>}
     {view==='roster'&&<RosterTools career={career} players={players} contracts={contracts} roleNames={roleNames} attributeLabels={attributeLabels} onUpdated={onUpdated}/>}
     {view==='roster'&&importRegion&&<p>Vagas de importados nos titulares · {players.filter(player=>byPlayer.get(player.id)?.starter&&isMobaImport(player,importRegion)).length}/{regionalPolicies[importRegion].limit}</p>}
     {view==='roster'&&alerts.length>0&&<section className="panel" aria-label="Vencimentos contratuais">
@@ -210,7 +235,7 @@ export function Players({career,players,contracts,organizations,view,onFinish,on
       </select>
       {view==='players'&&<label className="compare-choice"><input type="checkbox" checked={rankedOnly}
         onChange={event=>{setRankedOnly(event.target.checked);setPage(0);}}/> Apenas jovens da ranked</label>}
-      {rankedView&&<label className="compare-choice"><input type="checkbox" aria-label="Em ascensão" checked={rising} onChange={event=>{setRising(event.target.checked);setPage(0);}}/> Em ascensão</label>}
+      {rankedView&&!watchOnly&&<label className="compare-choice"><input type="checkbox" aria-label="Em ascensão" checked={rising} onChange={event=>{setRising(event.target.checked);setPage(0);}}/> Em ascensão</label>}
       {!risingView&&<><select aria-label="Ordenar jogadores" value={sort} onChange={event=>{setSort(event.target.value);setPage(0);}}>
         {rankedView&&<option value="points">Pontos da ranked</option>}
         <option value="overall">Overall</option><option value="age">Idade</option>
@@ -227,7 +252,7 @@ export function Players({career,players,contracts,organizations,view,onFinish,on
         <PlayerPortrait index={player.portraitIndex}/><span><strong>{player.nickname}</strong><small>{roleNames[player.role]} · OVR {Math.round(player.overall)}</small><small>{reason}</small></span>
       </button>)}</div>
     </section>}
-    {profile&&<PlayerProfilePanel key={profile.id} player={profile} players={players} career={career} contracts={contracts} organizations={organizations} startFull={profile.id===initialPlayerId} onClose={()=>setProfile(null)}/>}
+    {profilePanel}
     {comparing&&selected.length===2&&<section className="panel profile-panel" aria-label="Comparação de jogadores">
       <div className="profile-heading"><h2>Comparação</h2><button onClick={()=>setComparing(false)}>Fechar comparação</button></div>
       <div className="player-table"><table>
@@ -264,8 +289,17 @@ export function Players({career,players,contracts,organizations,view,onFinish,on
           {market&&targetButton(player)}
           {market&&<button onClick={()=>setQuickId(player.id)} aria-label={'Prévia de '+player.nickname}>Ver</button>}
           <PlayerPortrait index={player.portraitIndex}/>
-          <div><strong>{rankedView?'#'+rankById.get(player.id)+' · ':''}{player.nickname} · {roleNames[player.role]}</strong><small>{player.name} · {age} anos · {regions.of(player.country)} · {club}</small>{market&&usageLabel(usage.get(player.id))&&<small>{usageLabel(usage.get(player.id))}</small>}</div>
-          {rankedView&&<span>{rankedStats(player).points.toLocaleString('pt-BR')} {player.mode==='MOBA'?'PdL':'pts'} · {rankedStats(player).winRate.toLocaleString('pt-BR')}% vitórias</span>}
+          <div><strong>{rankedView&&!watchOnly?'#'+rankById.get(player.id)+' · ':''}{player.nickname} · {roleNames[player.role]}</strong><small>{player.name} · {age} anos · {regions.of(player.country)} · {club}</small>{market&&usageLabel(usage.get(player.id))&&<small>{usageLabel(usage.get(player.id))}</small>}</div>
+          {rankedView&&player.status==='ranked'&&<span>{rankedStats(player).points.toLocaleString('pt-BR')} {player.mode==='MOBA'?'PdL':'pts'} · {rankedStats(player).winRate.toLocaleString('pt-BR')}% vitórias</span>}
+          {rankedView&&<button disabled={watchBusy||!watch} onClick={async()=>{
+            setWatchBusy(true);setWatchError('');
+            try{setWatch(await setRankedWatch(career.id,player.id,!watchedIds.has(player.id)));}
+            catch(reason){setWatchError(String(reason));}
+            finally{setWatchBusy(false);}
+          }}>{watchedIds.has(player.id)?'Parar de observar':'Observar talento'}</button>}
+          {rankedView&&watchedIds.has(player.id)&&<details className="ranked-watch-details"><summary>Histórico de scouting</summary>
+            <RankedHistory history={watch?.history.filter(row=>row.player_id===player.id)??[]} currentPosition={watchOnly||!country?rankById.get(player.id):undefined}/>
+          </details>}
           <span className="muted">{player.mode}</span><strong>OVR {Math.round(player.overall)}</strong>
           {risingView&&<span>+{gains.get(player.id)!.toLocaleString('pt-BR')} OVR recente</span>}
           <span className="muted">{player.estimateLow!==null?`POT. ${player.estimateLow}–${player.estimateHigh}`:'POT. —'}</span>
@@ -311,5 +345,6 @@ export function Players({career,players,contracts,organizations,view,onFinish,on
         <button className="primary" disabled={quick.mode!==career.mode||!!quick.status||quick.onLoan||byPlayer.has(quick.id)} onClick={()=>setOffer(quick)}>Negociar</button>
       </>:<p className="muted">Selecione um atleta para ver os detalhes.</p>}
     </section>}
+    </>}
   </div>;
 }

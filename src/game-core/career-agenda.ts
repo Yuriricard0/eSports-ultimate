@@ -5,7 +5,7 @@ import type {StoredMatch} from './match-store.ts';
 import type {Contract} from './recruitment.ts';
 import {seasonBoundaries} from './renewal.ts';
 
-export type AgendaEvent={id:string;day:number;mode:Mode|null;label:string;own:boolean;target:'fixture'|'matches'|'roster'|null;fixtureId?:string};
+export type AgendaEvent={id:string;day:number;mode:Mode|null;label:string;own:boolean;target:'fixture'|'matches'|'roster'|'training'|null;fixtureId?:string};
 
 export function careerAgenda(career:Pick<Career,'name'|'mode'|'day'>,seasons:Season[],matches:StoredMatch[],contracts:Contract[],names:Map<number,string>){
  const mode=career.mode==='FPS'?'FPS':'MOBA';

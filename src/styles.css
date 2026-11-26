@@ -210,3 +210,44 @@ html[data-contrast=high]{--muted:#c8d1e4}html[data-contrast=high] button:not(:di
 .market-workspace .player-row>div{flex:1 1 115px}.market-workspace .player-row .market-target{flex:0 0 auto}.market-quick .player-portrait{width:96px;height:96px}.market-quick p{font-size:14px;margin:8px 0}.market-quick button{margin:4px 3px 0 0;padding:8px 10px}
 @media(max-width:1200px){.market-workspace{grid-template-columns:minmax(150px,.7fr) minmax(0,2fr)}.market-quick{grid-column:2;grid-row:3}.market-center{grid-column:2}.market-workspace .market-filters{grid-row:3/span 2}}
 @media(max-width:750px){.market-workspace{display:flex;flex-direction:column;align-items:stretch}.market-quick{order:2}.market-center{order:3}}
+.academy-recommendation,.ranked-watch-details{grid-column:1/-1;width:100%;border-top:1px solid #343a49;padding-top:8px}
+.academy-recommendation summary,.ranked-watch-details summary{cursor:pointer;color:#ffd5e0;font-weight:600}
+.ranked-history ol{display:grid;gap:6px;list-style:none;padding:0}
+.ranked-history ol li{display:grid;grid-template-columns:6rem minmax(48px,1fr) minmax(90px,auto);align-items:center;gap:8px}
+.ranked-history meter{width:100%}
+.solo-queue-panel{margin:12px 0}
+.solo-queue-panel>details{border-top:1px solid #343a49;padding:10px 0}
+.solo-queue-panel summary{cursor:pointer;color:#ffd5e0}
+.solo-queue-panel details ol{max-height:320px;overflow:auto}
+.academy-evaluation{margin:14px 0}
+.academy-evaluation>details{border-top:1px solid #343a49;padding:10px 0}
+.academy-evaluation summary{cursor:pointer;color:#ffd5e0}
+.tryout-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:14px 0}
+.tryout-card{border:1px solid #483647;background:#141925;border-radius:10px;padding:14px}
+.tryout-card header{display:flex;align-items:center;gap:12px;border-bottom:1px solid #453543;padding-bottom:8px}
+.tryout-card header h3,.tryout-card header p{margin:2px 0}
+.tryout-card>button{margin:8px 8px 0 0}
+.academy-nav{margin:10px 0 14px}
+.academy-dashboard{display:grid;gap:12px}
+.academy-dashboard-club{display:flex;align-items:center;gap:14px;background:linear-gradient(125deg,#3a1525,#171c28 55%)}
+.academy-dashboard-club .club-emblem{width:60px;height:62px;margin:0}
+.academy-dashboard-club h2,.academy-dashboard-club p{margin:3px 0}
+.academy-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px;margin:0}
+.academy-metrics>div{background:#151c29;border:1px solid #30394a;border-radius:9px;padding:12px}
+.academy-metrics dt,.academy-metrics small{color:#bec9d9;font-size:.85rem}
+.academy-metrics dd{margin:6px 0 0;font-size:1.3rem;font-weight:700}
+.academy-spotlight{display:flex;flex-wrap:wrap;gap:8px;padding:0;list-style:none}
+.academy-spotlight li{display:flex;align-items:center;gap:8px;border:1px solid #393443;border-radius:7px;padding:6px}
+.academy-spotlight .player-portrait{width:32px;height:32px}
+.training-week{margin:12px 0}
+.training-week-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:8px;margin:12px 0}
+.training-week-grid article{padding:10px;border:1px solid #333e50;background:#151c29;border-radius:8px;min-width:0}
+.training-week-grid article.training-today{border-color:#ad3659}
+.training-week-grid h3,.training-week-grid p{margin:4px 0;overflow-wrap:anywhere}
+.training-week-grid h3{font-size:.9rem}
+.training-week-grid time{color:#b1bed0;font-size:.8rem}
+.training-week-grid button,.training-week details>button{margin:4px 4px 0 0}
+.training-week>details{border-top:1px solid #343a49;padding:10px 0}
+.training-week summary{cursor:pointer;color:#ffd5e0}
+.training-editor{margin:10px 0}
+.training-load{border-left:3px solid #d99b51;padding:8px 12px;background:#211c17}

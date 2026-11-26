@@ -1,6 +1,6 @@
 import {athleteAge} from './development.ts';
 import type {Player} from './recruitment.ts';
-import {trainingNames} from './training.ts';
+import {additionalFocuses,trainingNames} from './training.ts';
 
 type Bind=(string|number)[];
 type Row=Record<string,unknown>;
@@ -56,7 +56,10 @@ export function assignAcademy(run:Run,read:Read,careerId:string,player:Player,ac
 export function setTrainingFocus(run:Run,read:Read,careerId:string,player:Player,focus:string){
  if(!Object.hasOwn(trainingNames,focus))throw Error('Foco de treinamento inválido.');
  editOwned(run,read,careerId,player,day=>{
+   const extended=additionalFocuses.includes(focus);
    run(`INSERT INTO web_player_training(career_id,player_id,focus,changed_day) VALUES(?,?,?,?)
-     ON CONFLICT(career_id,player_id) DO UPDATE SET focus=excluded.focus,changed_day=excluded.changed_day`,[careerId,player.id,focus,day]);
+     ON CONFLICT(career_id,player_id) DO UPDATE SET focus=excluded.focus,changed_day=excluded.changed_day`,[careerId,player.id,extended?'balanced':focus,day]);
+   if(extended)run('INSERT INTO web_training_focus_overrides VALUES(?,?,?) ON CONFLICT(career_id,player_id) DO UPDATE SET focus=excluded.focus',[careerId,player.id,focus]);
+   else run('DELETE FROM web_training_focus_overrides WHERE career_id=? AND player_id=?',[careerId,player.id]);
  });
 }

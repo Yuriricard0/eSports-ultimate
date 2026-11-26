@@ -1,4 +1,8 @@
 import {marketTargetsSchema,marketUsage} from '../game-core/market-overview';
+import {observeRanked,talentSchema} from '../game-core/talent-development';
+import {academyEvaluationSchema,athleteSnapshot,tryoutAvailable,tryoutDurations} from '../game-core/academy-evaluation';
+import {trainingWeekSchema,validateWeekSlots,type TrainingSlot} from '../game-core/training-week';
+import {resetSoloPoints,soloQueueSchema,soloSeasonDays,soloStandings,weeklyClimbers,type WeeklyRankings} from '../game-core/solo-queue';
 import {loanSchema,loanPeriods,activeLoans,loanPlayers,loanContracts,type Loan} from '../game-core/loans';
 import {eligibleMobaLineup,leagueMobaRegion,mobaImports,regionalPolicies,registeredMobaLineup,type MobaRegion} from '../game-core/moba-eligibility';
 import {approachSchema,competitiveEvidence,marketApproaches,marketInterest,marketLimits,type Approach} from '../game-core/market-interest';
@@ -28,7 +32,7 @@ import {departPlayer,maintainRosters,renewContract,saleOptions,sellerAskingPrice
 import {assignAcademy,setTrainingFocus} from '../game-core/academy';
 import type {PlayerTraining,TrainingPlan} from '../game-core/training';
 import {matchSchema,prepareMatch,completeMatch} from '../game-core/match-store';
-import {careerLineup,rivalLineup,matchStrength,applyMatchConditions,type MatchResult,type MatchSide} from '../game-core/matches';
+import {careerLineup,rivalLineup,matchStrength,applyMatchConditions,simulateMatch,type MatchResult,type MatchSide} from '../game-core/matches';
 import {defaultCompetitionConfig,generateSeason,hashSeed,isScheduledFixture,planCompetitionAdvance,playCompetitionFixture,validateCompetitionConfig,type Participant,type Season} from '../game-core/competitions';
 import {competitionSchema,latestSeason,nextSeasonStart,storeNewSeason,persistSeason} from '../game-core/competition-store';
 import {initializeFinance,refreshSponsorOffers,acceptSponsor,rejectSponsor,paySponsors,upgradeFacility,facilityEfficiency,type FacilityLevels} from '../game-core/finance';
@@ -93,7 +97,7 @@ const initialized=(async()=>{
  if(/CHECK\s*\(\s*bonus\s*>\s*0\s*\)/i.test(String(db.selectValue("SELECT sql FROM sqlite_schema WHERE name='web_contracts'")))){
    migrateZeroSigningBonus(sql=>{db.exec(sql);});
  }
- db.exec(contractSchema+phaseOneSchema+negotiationSchema+matchSchema+competitionSchema+newsSchema+saveVersionSchema+favoriteLineupSchema+approachSchema+marketTargetsSchema+loanSchema);
+ db.exec(contractSchema+phaseOneSchema+negotiationSchema+matchSchema+competitionSchema+newsSchema+saveVersionSchema+favoriteLineupSchema+approachSchema+marketTargetsSchema+loanSchema+talentSchema+soloQueueSchema+academyEvaluationSchema+trainingWeekSchema);
  db.transaction(()=>{
    for(const row of db.selectObjects('SELECT id FROM careers'))initializeFinance((sql,bind)=>{db.exec({sql,bind});},(sql,bind)=>db.selectObject(sql,bind),(sql,bind)=>db.selectObjects(sql,bind),String(row.id));
    db.exec('PRAGMA user_version=10;');
@@ -125,6 +129,18 @@ async function handleRequest(event:MessageEvent){
    WHERE p.career_id=? AND p.member=1 AND NOT EXISTS(SELECT 1 FROM web_contracts c WHERE c.career_id=p.career_id AND c.player_id=p.player_id)
    ORDER BY starter DESC`,[careerId,careerId]) as unknown as Contract[];
  const loansFor=(id:string)=>all('SELECT player_id,origin,destination,club,start_day,end_day,starter FROM web_loans WHERE career_id=? ORDER BY start_day DESC,player_id',[id]) as unknown as Loan[];
+ const trainingRows=(id:string)=>all(`SELECT t.player_id,t.academy,COALESCE(o.focus,t.focus) focus,t.changed_day FROM web_player_training t
+   LEFT JOIN web_training_focus_overrides o ON o.career_id=t.career_id AND o.player_id=t.player_id WHERE t.career_id=? ORDER BY t.player_id`,[id]);
+ const watched=(id:string)=>all('SELECT player_id FROM web_ranked_watch WHERE career_id=? AND active=1 ORDER BY player_id',[id]).map(row=>Number(row.player_id));
+ const rankedWatch=(id:string)=>({ids:watched(id),history:all('SELECT player_id,day,position,points FROM web_ranked_history WHERE career_id=? ORDER BY day,player_id',[id])});
+ const recordAcademy=(id:string,day:number,players:Player[],academy:ReadonlySet<number>)=>{
+   if(!academy.size)return;
+   for(const player of players)if(academy.has(player.id))run('INSERT OR IGNORE INTO web_academy_snapshots VALUES(?,?,?,?)',
+     [id,player.id,day,JSON.stringify(athleteSnapshot(player))]);
+ };
+ const recordRanked=(id:string,players:Player[],ids:ReadonlySet<number>,day:number)=>{
+   for(const row of observeRanked(players,ids,day))run('INSERT OR IGNORE INTO web_ranked_history VALUES(?,?,?,?,?)',[id,row.player_id,day,row.position,row.points]);
+ };
  const marketPlayers=async(careerId:string)=>{
    const stored=savedPlayers(careerId);
    const world=typeof stored==='string'?JSON.parse(stored) as Player[]:await loadPlayers();
@@ -171,23 +187,33 @@ async function handleRequest(event:MessageEvent){
      buyers.add(org.id);return true;
    }).slice(0,marketLimits.athlete);
  };
- const matchContext=async(careerId:string,opponentId:string)=>{
+ const matchContext=async(careerId:string,opponentId:string,selected?:number[],at?:number)=>{
    const current=get(careerId);
    if(!current)throw Error('Carreira não encontrada.');
    const catalog=await loadWorld(),players=await marketPlayers(careerId);
    const team=catalog.teams.find(team=>team.id===opponentId);
    const org=catalog.organizations.find(org=>org.id===team?.organization);
    if(!team||!org||catalog.leagues.find(league=>league.id===team.league)?.discipline!==current.mode)throw Error('Equipe adversária ou modalidade incompatível.');
-   const loans=loansFor(careerId),sport=loanPlayers(players,loans,current.day);
+   const day=at??current.day,loans=loansFor(careerId),sport=loanPlayers(players,loans,day);
+   const contracts=loanContracts(sport,contractsFor(careerId).filter(row=>!row.loan&&(!row.end_day||row.end_day>=day)),loans,day);
+   if(selected)validateFavoritePlayers(selected,current.mode as Mode,sport,contracts);
+   const lineup=careerLineup(sport,selected?contracts.map(row=>({...row,starter:Number(selected.includes(row.player_id))})):contracts);
    const sides:[MatchSide,MatchSide]=[
-     {id:'career:'+current.id,name:current.name,code:current.code,logo:'',identity:current.identity??{...defaultIdentity,primary:current.color,symbol:current.symbol},lineup:careerLineup(sport,loanContracts(sport,contractsFor(careerId),loans,current.day))},
-     {id:team.id,name:team.name,code:org.code,logo:org.logo,lineup:rivalLineup(sport,team.id,current.mode as Mode,current.day)},
+     {id:'career:'+current.id,name:current.name,code:current.code,logo:'',identity:current.identity??{...defaultIdentity,primary:current.color,symbol:current.symbol},lineup},
+     {id:team.id,name:team.name,code:org.code,logo:org.logo,lineup:rivalLineup(sport,team.id,current.mode as Mode,day)},
    ];
    const owned=ownedIds(careerId);
-   const outgoing=new Set(activeLoans(loans,current.day).filter(loan=>loan.destination===team.id).map(loan=>loan.player_id));
+   const outgoing=new Set(activeLoans(loans,day).filter(loan=>loan.destination===team.id).map(loan=>loan.player_id));
    if(sides[1].lineup.some(slot=>owned.has(slot.player.id)&&!outgoing.has(slot.player.id)))throw Error('O adversário possui vínculo conflitante com o seu elenco.');
-   sides.forEach(side=>matchStrength(side,current.mode as Mode,current.day));
+   sides.forEach(side=>matchStrength(side,current.mode as Mode,day));
    return {sides,players};
+ };
+ const trainingConflict=(id:string,mode:string,day:number)=>{
+   const season=latestSeason(read,id);
+   return season?.editions.some(edition=>edition.mode===mode&&edition.fixtures.some(game=>
+     (game.result?.completedDay===day||isScheduledFixture(game)&&(game.day===day||day===get(id)?.day&&game.day<day))&&
+       (game.home==='career'||game.away==='career')))||
+     !!read('SELECT 1 FROM web_matches WHERE career_id=? AND mode=? AND day=?',[id,mode,day]);
  };
  const competitionSide=(participant:Participant,players:Player[],mode:Mode,day:number,careerId:string,protectedIds=ownedIds(careerId),region?:MobaRegion):MatchSide=>{
    const loans=loansFor(careerId),sport=loanPlayers(players,loans,day);
@@ -405,13 +431,141 @@ async function handleRequest(event:MessageEvent){
  result=true;
  }else if(action==='training'){
  const owned=ownedIds(input);
- result=all('SELECT player_id,academy,focus,changed_day FROM web_player_training WHERE career_id=? ORDER BY player_id',[input]).filter(row=>owned.has(Number(row.player_id)));
+ result=trainingRows(input).filter(row=>owned.has(Number(row.player_id)));
+ }else if(action==='training-agenda'){
+ const career=get(input)!;
+ result=all('SELECT mode,day,data FROM web_training_events WHERE career_id=? AND day>=? AND done=0 ORDER BY day',[input,career.day])
+   .map(row=>({day:row.day,mode:row.mode,kind:JSON.parse(String(row.data)).kind}));
+ }else if(action==='training-week'){
+ const catalog=await loadWorld(),career=get(input)!;
+ const names=new Map(catalog.teams.map(team=>[team.id,team.name]));
+ const season=latestSeason(read,input);
+ const official=(season?.editions??[]).flatMap(edition=>edition.fixtures.filter(game=>game.home==='career'||game.away==='career').map(game=>({
+   day:game.result?.completedDay??game.day,mode:edition.mode,name:edition.name,done:!!game.result,fixture:game.id,kind:'official',
+ })));
+ const friendlies=all('SELECT day,mode,id,result FROM web_matches WHERE career_id=?',[input]).map(row=>({
+   day:row.day,mode:row.mode,name:'Amistoso',done:!!row.result,fixture:row.id,kind:'friendly',
+ }));
+ result={
+   events:all('SELECT mode,day,data,done,result FROM web_training_events WHERE career_id=? ORDER BY day',[input]).map(row=>{
+     const data=JSON.parse(String(row.data));
+     return {...data,mode:row.mode,day:row.day,done:!!row.done,result:row.result?JSON.parse(String(row.result)):null,opponentName:names.get(data.opponent)};
+   }),
+   schedule:[...official,...friendlies],
+   models:all('SELECT id,name,data FROM web_training_weeks WHERE career_id=? ORDER BY name,id',[input]).map(row=>({id:row.id,name:row.name,slots:JSON.parse(String(row.data))})),
+   opponents:catalog.teams.filter(team=>!team.academy&&team.id!==career.entry?.displacedTeamId&&catalog.leagues.some(league=>league.id===team.league&&league.discipline===career.mode))
+     .map(team=>({id:team.id,name:team.name})),
+   facilities:Object.fromEntries(all('SELECT kind,level FROM web_facilities WHERE career_id=?',[input]).map(row=>[row.kind,row.level])),
+ };
+ }else if(action==='training-model-save'||action==='training-model-rename'||action==='training-model-delete'){
+ const {careerId,id}=input;
+ if(action==='training-model-save')run('INSERT INTO web_training_weeks VALUES(?,?,?,?)',[careerId,crypto.randomUUID(),favoriteName(input.name),JSON.stringify(validateWeekSlots(input.slots))]);
+ if(action==='training-model-rename')run('UPDATE web_training_weeks SET name=? WHERE career_id=? AND id=?',[favoriteName(input.name),careerId,id]);
+ if(action==='training-model-delete')run('DELETE FROM web_training_weeks WHERE career_id=? AND id=?',[careerId,id]);
+ result=true;
+ }else if(action==='training-week-apply'||action==='training-event-plan'){
+ const {careerId,start}=input;
+ const model=action==='training-week-apply'?read('SELECT data FROM web_training_weeks WHERE career_id=? AND id=?',[careerId,input.modelId]):null;
+ if(action==='training-week-apply'&&!model)throw Error('Modelo de semana não encontrado.');
+ const slots=validateWeekSlots(model?JSON.parse(String(model.data)):[input.slot]);
+ const career=get(careerId)!;
+ if(!Number.isSafeInteger(start)||start<career.day||start>career.day+90)throw Error('Planeje entre hoje e os próximos 90 dias.');
+ for(const slot of slots)if(slot.kind==='scrim'){
+   if(!slot.opponent||slot.opponent===career.entry?.displacedTeamId)throw Error('Escolha uma organização adversária disponível.');
+   await matchContext(careerId,slot.opponent,slot.players,start+slot.offset);
+ }
+ db.transaction(()=>{
+   const current=get(careerId)!;
+   for(const slot of slots){
+     const day=start+slot.offset;
+     if(day<current.day||trainingConflict(careerId,current.mode,day))throw Error('Há um compromisso de partida nesta data. Escolha outro dia.');
+     const existing=read('SELECT done FROM web_training_events WHERE career_id=? AND mode=? AND day=?',[careerId,current.mode,day]);
+     if(existing&&(model||existing.done))throw Error('Já existe uma atividade nessa data.');
+     run(`INSERT INTO web_training_events(career_id,mode,day,data) VALUES(?,?,?,?)
+       ON CONFLICT(career_id,mode,day) DO UPDATE SET data=excluded.data`,[careerId,current.mode,day,JSON.stringify(slot)]);
+   }
+ });
+ result=true;
+ }else if(action==='training-event-cancel'||action==='training-event-complete'){
+ const {careerId,day}=input,career=get(careerId)!;
+ const key=[careerId,career.mode,day];
+ const row=read('SELECT data,done FROM web_training_events WHERE career_id=? AND mode=? AND day=?',key);
+ if(!row||row.done||day<career.day)throw Error('A atividade já está encerrada.');
+ if(action==='training-event-cancel'){
+   run('DELETE FROM web_training_events WHERE career_id=? AND mode=? AND day=? AND done=0',key);result=career;
+ }else{
+   if(day!==career.day||trainingConflict(careerId,career.mode,day))throw Error('A atividade só pode ser realizada na data planejada e sem conflito.');
+   const slot=JSON.parse(String(row.data)) as TrainingSlot;
+   const context=slot.kind==='scrim'?await matchContext(careerId,slot.opponent!,slot.players,day):null;
+   db.transaction(()=>{
+     const current=read('SELECT data,done FROM web_training_events WHERE career_id=? AND mode=? AND day=?',key);
+     if(!current||current.done||current.data!==row.data||get(careerId)!.day!==day||trainingConflict(careerId,career.mode,day))throw Error('A atividade não está mais disponível.');
+     const match=context?simulateMatch(career.mode as Mode,day,context.sides,hashSeed(careerId+':scrim:'+day)):null;
+     run("UPDATE web_training_events SET done=1,result=NULLIF(?,'') WHERE career_id=? AND mode=? AND day=?",[match?JSON.stringify(match):'',...key]);
+     if(context&&match){
+       const participated=new Set(context.sides[0].lineup.map(member=>member.player.id));
+       writeMarketPlayers(careerId,context.players.map(player=>{
+         if(!participated.has(player.id))return player;
+         const condition=playerCondition(player,day);
+         return {...player,condition:{...condition,day,fatigue:Math.min(100,condition.fatigue+4)}};
+       }));
+     }
+   });
+   result=get(careerId);
+ }
  }else if(action==='assign-academy'||action==='set-training'){
  const player=(await marketPlayers(input.careerId)).find(p=>p.id===input.playerId);
  if(!player)throw Error('Atleta não encontrado.');
- if(action==='assign-academy')assignAcademy(run,read,input.careerId,player,input.academy);
+ if(action==='assign-academy'){
+   assignAcademy(run,read,input.careerId,player,input.academy);
+   if(input.academy)recordAcademy(input.careerId,get(input.careerId)!.day,[player],new Set([player.id]));
+ }
  else setTrainingFocus(run,read,input.careerId,player,input.focus);
  result=get(input.careerId);
+ }else if(action==='academy-evaluation'){
+ const career=get(input)!;
+ const snapshots=all('SELECT player_id,day,data FROM web_academy_snapshots WHERE career_id=? ORDER BY day,player_id',[input])
+   .map(({player_id,day,data})=>({player_id,day,snapshot:JSON.parse(String(data))}));
+ const tryouts=all('SELECT player_id,start_day,end_day,state,opening,final FROM web_tryouts WHERE career_id=? ORDER BY start_day DESC,player_id',[input])
+   .map(row=>({...row,opening:JSON.parse(String(row.opening)),final:row.final==null?null:JSON.parse(String(row.final))}));
+ const competitive=all('SELECT data FROM web_competition_seasons WHERE career_id=? ORDER BY number',[input])
+   .flatMap(({data})=>contractFixtures(JSON.parse(String(data)),career.day))
+   .map(row=>({day:row.day,mode:row.mode,won:row.won,appearances:[...row.appearances]}));
+ result={snapshots,tryouts,competitive,coach:!!read('SELECT 1 FROM web_youth_coach WHERE career_id=?',[input]),
+   coachAvailable:Number(read("SELECT level FROM web_facilities WHERE career_id=? AND kind='academy'",[input])?.level??0)>=1};
+ }else if(action==='youth-coach'){
+ if(typeof input.enabled!=='boolean')throw Error('Selecione a especialização.');
+ if(input.enabled){
+   if(Number(read("SELECT level FROM web_facilities WHERE career_id=? AND kind='academy'",[input.careerId])?.level??0)<1)
+     throw Error('A especialização requer a instalação Academy no nível 1.');
+   run('INSERT OR IGNORE INTO web_youth_coach VALUES(?)',[input.careerId]);
+ }else run('DELETE FROM web_youth_coach WHERE career_id=?',[input.careerId]);
+ result=true;
+ }else if(action==='start-tryout'){
+ const {careerId,playerId,days}=input;
+ if(!tryoutDurations.includes(days))throw Error('Escolha 7, 14 ou 21 dias.');
+ const player=(await marketPlayers(careerId)).find(row=>row.id===playerId),career=get(careerId)!;
+ if(!player||!tryoutAvailable(player,career.mode)||ownedIds(careerId).has(playerId))throw Error('O candidato não está disponível para avaliação.');
+ if(read("SELECT 1 FROM web_tryouts WHERE career_id=? AND player_id=? AND state IN ('active','completed')",[careerId,playerId]))
+   throw Error('O candidato já tem uma avaliação aberta.');
+ if(Number(read("SELECT COUNT(*) total FROM web_tryouts WHERE career_id=? AND state='active'",[careerId])?.total)>=3)
+   throw Error('Finalize uma das três avaliações em andamento.');
+ db.transaction(()=>{
+   run("INSERT INTO web_tryouts VALUES(?,?,?,?,'active',?,NULL)",[careerId,playerId,career.day,career.day+days,JSON.stringify(athleteSnapshot(player))]);
+   const stored=savedPlayers(careerId);
+   if(player.status==='ranked'&&typeof stored==='string')recordRanked(careerId,JSON.parse(stored) as Player[],new Set([playerId]),career.day);
+ });
+ result=true;
+ }else if(action==='dismiss-tryout'){
+ const {careerId,playerId,startDay}=input;
+ const player=(await marketPlayers(careerId)).find(row=>row.id===playerId);
+ db.transaction(()=>{
+   if(!read("SELECT 1 FROM web_tryouts WHERE career_id=? AND player_id=? AND start_day=? AND state IN ('active','completed')",[careerId,playerId,startDay]))
+     throw Error('Essa avaliação já está encerrada.');
+   run("UPDATE web_tryouts SET state='dismissed' WHERE career_id=? AND player_id=? AND start_day=?",[careerId,playerId,startDay]);
+   if(player?.status==='ranked')run("UPDATE web_negotiations SET state='cancelled' WHERE career_id=? AND player_id=? AND state IN ('accepted','counter')",[careerId,playerId]);
+ });
+ result=true;
  }else if(action==='news'){
  const current=get(input.careerId);if(!current)throw Error('Carreira não encontrada.');
  const catalog=await loadWorld(),stored=savedPlayers(current.id);
@@ -482,6 +636,9 @@ async function handleRequest(event:MessageEvent){
  result=all('SELECT id,opponent_team_id,mode,day,result FROM web_matches WHERE career_id=? ORDER BY day DESC,rowid DESC LIMIT 100',[input])
    .map(row=>({...row,result:row.result?JSON.parse(String(row.result)):null}));
  }else if(action==='prepare-match'){
+ const friendlyCareer=get(input.careerId)!;
+ if(read('SELECT 1 FROM web_training_events WHERE career_id=? AND mode=? AND day=?',[input.careerId,friendlyCareer.mode,friendlyCareer.day]))
+   throw Error('Já existe uma atividade de treinamento nesta data.');
  await matchContext(input.careerId,input.opponentId);
  const matchId=crypto.randomUUID();
  prepareMatch(run,read,input.careerId,matchId,input.opponentId,crypto.getRandomValues(new Uint32Array(1))[0]);
@@ -489,6 +646,9 @@ async function handleRequest(event:MessageEvent){
  }else if(action==='cancel-match'){
  run("DELETE FROM web_matches WHERE career_id=? AND id=? AND result=''",[input.careerId,input.id]);result=true;
  }else if(action==='play-match'){
+ const friendlyCareer=get(input.careerId)!;
+ if(read('SELECT 1 FROM web_training_events WHERE career_id=? AND mode=? AND day=?',[input.careerId,friendlyCareer.mode,friendlyCareer.day]))
+   throw Error('Já existe uma atividade de treinamento nesta data.');
  const match=read('SELECT opponent_team_id,result FROM web_matches WHERE career_id=? AND id=?',[input.careerId,input.id]);
  if(!match)throw Error('Partida não encontrada.');
  if(match.result)throw Error('Esta partida já foi concluída.');
@@ -524,6 +684,8 @@ async function handleRequest(event:MessageEvent){
  const advancingCareer=get(input.careerId)!;
  const marketCatalog=await loadWorld(),competition=latestSeason(read,input.careerId);
  const seasonLoans=loansFor(input.careerId);
+ let solo=read('SELECT start_day,end_day FROM web_solo_seasons WHERE career_id=? ORDER BY start_day DESC LIMIT 1',[input.careerId]);
+ const observedRanked=new Set(watched(input.careerId));
  const regionalTeams=new Map(marketCatalog.teams.filter(team=>marketCatalog.leagues.some(league=>league.id===team.league&&league.discipline==='MOBA')).map(team=>[team.id,leagueMobaRegion(team.league)]));
  const careerRegion=competition?.editions.find(edition=>edition.importRegion&&edition.participants.some(team=>team.id==='career'))?.importRegion;
  const {days,stoppedAt}=planCompetitionAdvance(competition,input.expectedDay,input.days);
@@ -536,14 +698,19 @@ async function handleRequest(event:MessageEvent){
      WHERE x.career_id=c.career_id AND x.player_id=c.player_id AND x.start_day=c.start_day),end_day)) end_day
      FROM web_contracts c WHERE career_id=? AND start_day<=? AND end_day>=?`,[input.careerId,to,from])
      .map(row=>({player_id:Number(row.player_id),start_day:Number(row.start_day),end_day:Number(row.end_day),salary:Number(row.salary)})).filter(c=>c.end_day>=from);
-   const training=new Map(all('SELECT player_id,focus,academy,changed_day FROM web_player_training WHERE career_id=?',[input.careerId])
+   const training=new Map(trainingRows(input.careerId)
      .map(row=>[Number(row.player_id),row as unknown as PlayerTraining]));
    const facilityLevels=Object.fromEntries(all('SELECT kind,level FROM web_facilities WHERE career_id=?',[input.careerId]).map(row=>[String(row.kind),Number(row.level)])) as Partial<FacilityLevels>;
+   const coach=!!read('SELECT 1 FROM web_youth_coach WHERE career_id=?',[input.careerId]);
+   const academy=new Set([...training].filter(([,row])=>row.academy).map(([id])=>id));
+   const needsBaseline=new Set([...academy].filter(id=>!read('SELECT 1 FROM web_academy_snapshots WHERE career_id=? AND player_id=? LIMIT 1',[input.careerId,id])));
+   recordAcademy(input.careerId,from,players,needsBaseline);
+   const activeTryouts=all("SELECT player_id,start_day,end_day FROM web_tryouts WHERE career_id=? AND state='active'",[input.careerId]);
    const legacy=new Set(all(`SELECT player_id FROM web_imported_players p WHERE career_id=? AND member=1
      AND NOT EXISTS(SELECT 1 FROM web_contracts c WHERE c.career_id=p.career_id AND c.player_id=p.player_id)`,[input.careerId]).map(row=>Number(row.player_id)));
    const plansFor=(id:number):TrainingPlan[]=>{
      const config=training.get(id),focus=config?.focus??'balanced';
-     const efficiency=facilityEfficiency(facilityLevels,!!config?.academy);
+     const efficiency=Math.min(1.12,facilityEfficiency(facilityLevels,!!config?.academy)+(coach&&config?.academy?0.02:0));
      return legacy.has(id)?[{focus,fromDay:config?.changed_day??1,toDay:to,efficiency}]:contracts.filter(c=>c.player_id===id)
        .map(c=>({focus,fromDay:Math.max(config?.changed_day??1,c.start_day),toDay:c.end_day,efficiency}));
    };
@@ -551,6 +718,15 @@ async function handleRequest(event:MessageEvent){
    const noTraining:TrainingPlan[]=[];
    const annual=seasonBoundaries(from,to);
    for(let day=from+1;day<=to;day++){
+     if(!solo||day>Number(solo.end_day)){
+       if(solo){
+         run("UPDATE web_solo_seasons SET final=? WHERE career_id=? AND start_day=? AND final=''",
+           [JSON.stringify(soloStandings(players)),input.careerId,Number(solo.start_day)]);
+         players=resetSoloPoints(players);
+       }
+       solo={start_day:day,end_day:day+soloSeasonDays-1};
+       run('INSERT INTO web_solo_seasons(career_id,start_day,end_day) VALUES(?,?,?)',[input.careerId,day,Number(solo.end_day)]);
+     }
      const beforeDevelopment=players;
      const monthly=(day-1)%30===0;
      const adaptation=new Map(contracts.filter(c=>c.start_day<=day&&c.end_day>=day&&[30,60].includes(day-c.start_day)).map(c=>[c.player_id,c]));
@@ -643,12 +819,30 @@ async function handleRequest(event:MessageEvent){
          return {...player,mobaTenure:{...player.mobaTenure,[region]:(player.mobaTenure?.[region]??0)+1}};
        });
      }
+     if(day%7===0)recordRanked(input.careerId,players,new Set([...observedRanked,
+       ...activeTryouts.filter(row=>Number(row.end_day)>=day).map(row=>Number(row.player_id))]),day);
+     if(monthly)recordAcademy(input.careerId,day,players,new Set([...academy].filter(id=>protectedIds.has(id))));
+     for(const evaluation of activeTryouts.filter(row=>Number(row.end_day)===day)){
+       recordRanked(input.careerId,players,new Set([Number(evaluation.player_id)]),day);
+       const candidate=players.find(row=>row.id===evaluation.player_id);
+       const available=!!candidate&&tryoutAvailable(candidate,advancingCareer.mode)&&!protectedIds.has(candidate.id);
+       run("UPDATE web_tryouts SET state=?,final=CASE WHEN ?='' THEN NULL ELSE ? END WHERE career_id=? AND player_id=? AND start_day=? AND state='active'",
+         [available?'completed':'unavailable',available?'yes':'',available?JSON.stringify(athleteSnapshot(candidate!)):'',input.careerId,Number(evaluation.player_id),Number(evaluation.start_day)]);
+     }
+     if((day-Number(solo.start_day))%7===0){
+       run('INSERT OR IGNORE INTO web_solo_weeks VALUES(?,?,?)',[input.careerId,day,JSON.stringify(soloStandings(players))]);
+       run('DELETE FROM web_solo_weeks WHERE career_id=? AND day<?',[input.careerId,day-14]);
+     }
    }
    const owned=ownedIds(input.careerId);
    players=maintainRosters(players,marketCatalog,owned,to,aiHiring(input.careerId,to));
    writeMarketPlayers(input.careerId,players,to);
    for(const row of all('SELECT player_id FROM web_player_training WHERE career_id=?',[input.careerId])){
-     if(!owned.has(Number(row.player_id)))run('DELETE FROM web_player_training WHERE career_id=? AND player_id=?',[input.careerId,Number(row.player_id)]);
+     if(!owned.has(Number(row.player_id))){
+       const key=[input.careerId,Number(row.player_id)];
+       run('DELETE FROM web_player_training WHERE career_id=? AND player_id=?',key);
+       run('DELETE FROM web_training_focus_overrides WHERE career_id=? AND player_id=?',key);
+     }
    }
  },(from,to)=>paySponsors(run,read,all,input.careerId,from,to));
  report.balance=Number(get(input.careerId)?.balance);
@@ -668,6 +862,30 @@ async function handleRequest(event:MessageEvent){
  const seasons=all('SELECT data FROM web_competition_seasons WHERE career_id=?',[input]).map(row=>JSON.parse(String(row.data)) as Season);
  result={targets:all('SELECT player_id FROM web_market_targets WHERE career_id=? ORDER BY player_id',[input]).map(row=>Number(row.player_id)),
    usage:marketUsage(seasons,current.day,players)};
+ }else if(action==='ranked-watch'){
+ result=rankedWatch(input);
+ }else if(action==='solo-queue'){
+ const seasons=all("SELECT start_day,end_day,final<>'' closed FROM web_solo_seasons WHERE career_id=? ORDER BY start_day DESC",[input]);
+ const weeks=seasons.length?all('SELECT day,standings FROM web_solo_weeks WHERE career_id=? AND day>=? ORDER BY day DESC LIMIT 2',[input,Number(seasons[0].start_day)]):[];
+ result={seasons:seasons.map(row=>({...row,closed:!!row.closed})),
+   comparison:weeks.length===2?{from:Number(weeks[1].day),to:Number(weeks[0].day),
+     climbers:weeklyClimbers(JSON.parse(String(weeks[1].standings)) as WeeklyRankings,JSON.parse(String(weeks[0].standings)) as WeeklyRankings)}:null};
+ }else if(action==='solo-final'){
+ const archive=read("SELECT final FROM web_solo_seasons WHERE career_id=? AND start_day=? AND final<>''",[input.careerId,input.startDay]);
+ if(!archive)throw Error('A temporada ainda não possui classificação final.');
+ result=JSON.parse(String(archive.final));
+ }else if(action==='ranked-player-history'){
+ result=all('SELECT player_id,day,position,points FROM web_ranked_history WHERE career_id=? AND player_id=? ORDER BY day',[input.careerId,input.playerId]);
+ }else if(action==='set-ranked-watch'){
+ const {careerId,playerId,tracked}=input;
+ if(!Number.isSafeInteger(playerId)||typeof tracked!=='boolean'||!get(careerId))throw Error('Acompanhamento inválido.');
+ const players=tracked?await marketPlayers(careerId):[];
+ if(tracked&&!players.some(player=>player.id===playerId&&player.status==='ranked'))throw Error('Atleta indisponível na Solo Queue.');
+ db.transaction(()=>{
+   run('INSERT INTO web_ranked_watch VALUES(?,?,?) ON CONFLICT(career_id,player_id) DO UPDATE SET active=excluded.active',[careerId,playerId,Number(tracked)]);
+   if(tracked)recordRanked(careerId,players,new Set([playerId]),get(careerId)!.day);
+ });
+ result=rankedWatch(careerId);
  }else if(action==='market-target'){
  const {careerId,playerId,tracked}=input;
  if(!get(careerId)||!Number.isSafeInteger(playerId)||typeof tracked!=='boolean')throw Error('Alvo inválido.');
@@ -732,6 +950,7 @@ async function handleRequest(event:MessageEvent){
    for(const offer of approaches(input.careerId,day,player.id))if(offer.state==='open')
      setApproach(input.careerId,offer,offer.team===buyer?.team?'signed':'expired');
    run('DELETE FROM web_player_training WHERE career_id=? AND player_id=?',[input.careerId,player.id]);
+   run('DELETE FROM web_training_focus_overrides WHERE career_id=? AND player_id=?',[input.careerId,player.id]);
    const updated=players.map(p=>p.id===player.id?{...p,organization:buyer?.organization??null,team:buyer?.team??null,
      history:[{day,description:buyer?'Vendido para '+buyer.name+'.':'Dispensado pela organização.'},...(p.history??[])]}:p);
    writeMarketPlayers(input.careerId,updated);
@@ -746,14 +965,17 @@ async function handleRequest(event:MessageEvent){
  const playerId=action==='confirm-offer'?db.selectValue('SELECT player_id FROM web_negotiations WHERE career_id=? AND id=?',[input.careerId,input.id]):input.playerId;
  const world=await marketPlayers(input.careerId);
  const catalog=await loadWorld();
- const player=world.find(candidate=>candidate.id===playerId);
+ const athlete=world.find(candidate=>candidate.id===playerId);
  if(activeLoans(loansFor(input.careerId),get(input.careerId)!.day).some(row=>row.player_id===playerId))throw Error('Aguarde o fim do empréstimo.');
- if(!player)throw Error('Jogador não encontrado.');
+ if(!athlete)throw Error('Jogador não encontrado.');
+ const completedTryout=read("SELECT 1 FROM web_tryouts WHERE career_id=? AND player_id=? AND state='completed'",[input.careerId,athlete.id]);
+ const player=athlete.status==='ranked'&&completedTryout&&tryoutAvailable(athlete,get(input.careerId)!.mode)?{...athlete,status:undefined}:athlete;
  const legacy=db.selectObjects(`SELECT p.player_id,p.data,p.starter FROM web_imported_players p
    WHERE p.career_id=? AND p.member=1 AND NOT EXISTS(SELECT 1 FROM web_contracts c WHERE c.career_id=p.career_id AND c.player_id=p.player_id)`,[input.careerId]);
  if(legacy.some(row=>row.player_id===player.id))throw Error('O atleta já faz parte do elenco importado.');
  const legacyStarter=legacy.some(row=>row.starter===1&&JSON.parse(String(row.data)).role===player.role);
  const onSigned=(day:number)=>{
+   run("UPDATE web_tryouts SET state='signed' WHERE career_id=? AND player_id=? AND state IN ('active','completed')",[input.careerId,player.id]);
    const seed=Number(db.selectValue('SELECT seed FROM web_career_world WHERE career_id=?',[input.careerId]));
    const updated=applyPerkEvent({...player,organization:null,team:null,
      history:[{day,description:'Assinou contrato com '+get(input.careerId)?.name+'.'},...(player.history??[])]},

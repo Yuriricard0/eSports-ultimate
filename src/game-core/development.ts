@@ -49,10 +49,10 @@ export function developPlayer(player:Player,fromDay:number,toDay:number,training
     const decline=age>=30?Math.min(0.45,(age-29)*0.05):0;
     const plan=training.find(plan=>plan.fromDay<=day&&plan.toDay>=day);
     const efficiency=Math.max(1,Math.min(1.12,plan?.efficiency??1));
-    const delta=growth*(0.75+condition.morale/220)*effects.morale_recovery*efficiency-decline;
+    const delta=growth*(0.75+condition.morale/220)*effects.morale_recovery*efficiency*(plan?.focus==='maintenance'?.75:1)-decline;
     if(Math.abs(delta)<0.005)continue;
     const focus=plan?.focus??'balanced';
-    const multipliers=trainingMultipliers(Object.keys(current.attributes),delta>0?focus:'balanced');
+    const multipliers=trainingMultipliers(Object.keys(current.attributes),delta>0?focus:'balanced',current.role);
     const attributes=Object.fromEntries(Object.entries(current.attributes).map(([key,value])=>[key,round(Math.max(1,bound(value+delta*multipliers[key])))]));
     const rating=overall(attributes,current.mode as Mode,current.role);
     if(rating<1||rating===current.overall)continue;

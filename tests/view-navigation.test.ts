@@ -2,6 +2,23 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {appHarness} from './helpers/component-harness.ts';
 
+test('Academy navega entre visão geral, atletas e a mesma central de scouting',async()=>{
+ let opened=false;
+ const app=appHarness({
+   listTraining:async()=>[],getAcademyEvaluation:async()=>({snapshots:[],tryouts:[],competitive:[],coach:false,coachAvailable:false}),
+   listRankedWatch:async()=>({ids:[],history:[]}),
+ },[],'Academy',{career:{id:'a',mode:'MOBA',day:20},players:[],contracts:[],view:'academy',onScouting:()=>{opened=true;}});
+ app.render();await app.flush();
+ assert.ok(app.component('AcademyOverview'));
+ assert.equal(app.component('AcademyEvaluation'),undefined);
+ app.button('Atletas').props.onClick();app.render();
+ assert.equal(app.component('AcademyEvaluation').props.section,'reports');
+ app.button('Scouting').props.onClick();app.render();
+ assert.equal(app.component('AcademyEvaluation').props.section,'tryouts');
+ app.button('Abrir Central de scouting').props.onClick();
+ assert.equal(opened,true);
+});
+
 test('Central de negociações filtra propostas que vencem em breve e separa as expiradas',async()=>{
  const app=appHarness({
    listNegotiations:async()=>[
@@ -63,7 +80,7 @@ test('ranked em ascensão exige histórico e mantém a classificação original'
  const base={name:'Jogador',mode:'MOBA',role:'mid',country:'BR',birthDay:-7000,overall:70,status:'ranked'};
  const players=[{...base,id:1,nickname:'Em Progresso',developmentHistory:[{day:60,overall:69}],rankedPerformance:{points:1000,winRate:50}},
    {...base,id:2,nickname:'Sem Histórico',rankedPerformance:{points:2000,winRate:50}}];
- const app=appHarness({loadMarketOverview:async()=>({targets:[],usage:[]})},[],'Players',{career:{id:'a',mode:'MOBA',day:120},players,contracts:[],organizations:{},view:'ranked'});
+ const app=appHarness({loadMarketOverview:async()=>({targets:[],usage:[]}),listRankedWatch:async()=>({ids:[],history:[]})},[],'Players',{career:{id:'a',mode:'MOBA',day:120},players,contracts:[],organizations:{},view:'ranked'});
  app.render();app.control('Em ascensão').props.onChange({target:{checked:true}});app.render();
  assert.match(app.text(),/#2 ·\s*Em Progresso/);
  assert.doesNotMatch(app.text(),/Sem Histórico/);

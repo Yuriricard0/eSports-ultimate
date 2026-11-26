@@ -4,18 +4,20 @@ import {formatCareerDay,type CalendarResult} from '../game-core/calendar';
 import type {Contract,Player} from '../game-core/recruitment';
 import type {StoredMatch} from '../game-core/match-store';
 import type {Season} from '../game-core/competitions';
-import {careerAgenda} from '../game-core/career-agenda';
-import {listPayroll,listMatches,listCompetitions,type PayrollEntry} from '../persistence/repository';
+import {careerAgenda,type AgendaEvent} from '../game-core/career-agenda';
+import {activityNames} from '../game-core/training-week';
+import {getTrainingAgenda,listPayroll,listMatches,listCompetitions,type PayrollEntry,type TrainingAgendaItem} from '../persistence/repository';
 import {money} from './Players';
 import {useViewPreference} from './view-preferences';
 
-export function CareerCalendar({career,players,contracts,advance,busy,report,onMatches,onCompetitions,onOpenFixture,onRoster}:{
+export function CareerCalendar({career,players,contracts,advance,busy,report,onMatches,onCompetitions,onOpenFixture,onRoster,onTraining}:{
   career:Career;players:Player[];contracts:Contract[];advance:(days:number)=>void;busy:boolean;report?:CalendarResult;onMatches:()=>void;onCompetitions:()=>void;onOpenFixture:(id:string)=>void;onRoster:()=>void;
+  onTraining?:()=>void;
 }){
   const [rows,setRows]=useState<PayrollEntry[]|null>(null);
   const [error,setError]=useState('');
   const [page,setPage]=useState(0);
-  const [schedule,setSchedule]=useState<{seasons:Season[];matches:StoredMatch[]}|null>(null);
+  const [schedule,setSchedule]=useState<{seasons:Season[];matches:StoredMatch[];training:TrainingAgendaItem[]}|null>(null);
   const [scheduleError,setScheduleError]=useState('');
   const [mode,setMode]=useViewPreference(`${career.id}:calendar:mode`,'');
   const [onlyOwn,setOnlyOwn]=useViewPreference(`${career.id}:calendar:own`,true);
@@ -23,7 +25,7 @@ export function CareerCalendar({career,players,contracts,advance,busy,report,onM
   useEffect(()=>{
     let active=true;
     setScheduleError('');
-    void Promise.all([listCompetitions(career.id),listMatches(career.id)]).then(([state,matches])=>{if(active)setSchedule({seasons:state.seasons,matches});})
+    void Promise.all([listCompetitions(career.id),listMatches(career.id),onTraining?getTrainingAgenda(career.id):[]]).then(([state,matches,training])=>{if(active)setSchedule({seasons:state.seasons,matches,training});})
       .catch(reason=>{if(active)setScheduleError(String(reason));});
     return()=>{active=false;};
   },[career]);
@@ -34,7 +36,10 @@ export function CareerCalendar({career,players,contracts,advance,busy,report,onM
     return()=>{active=false;};
   },[career.id,career.day]);
   const byId=new Map(players.map(player=>[player.id,player.nickname]));
-  const agenda=schedule?careerAgenda(career,schedule.seasons,schedule.matches,contracts,byId).filter(event=>(!onlyOwn||event.own)&&(!mode||event.mode===mode)):[];
+  const trainingAgenda:AgendaEvent[]=(schedule?.training??[]).map(row=>({id:'training:'+row.mode+':'+row.day,day:row.day,mode:row.mode,
+    label:activityNames[row.kind]+' · Planejado',own:true,target:'training'}));
+  const agenda=schedule?[...careerAgenda(career,schedule.seasons,schedule.matches,contracts,byId),...trainingAgenda]
+    .filter(event=>(!onlyOwn||event.own)&&(!mode||event.mode===mode)).sort((a,b)=>a.day-b.day||a.id.localeCompare(b.id)):[];
   const agendaIndex=Math.min(agendaPage,Math.max(0,Math.ceil(agenda.length/12)-1));
   const entries=rows??[];
   const outstanding=entries.reduce((total,row)=>total+row.amount-row.paid,0);
@@ -59,6 +64,7 @@ export function CareerCalendar({career,players,contracts,advance,busy,report,onM
         {event.target==='fixture'&&event.fixtureId&&<button onClick={()=>onOpenFixture(event.fixtureId!)}>Abrir confronto →</button>}
         {event.target==='matches'&&<button onClick={onMatches}>Ver amistoso →</button>}
         {event.target==='roster'&&<button onClick={onRoster}>Ver elenco →</button>}
+        {event.target==='training'&&onTraining&&<button onClick={onTraining}>Abrir treinamento →</button>}
       </p>)}
       {agenda.length>12&&<footer><button disabled={!agendaIndex} onClick={()=>setAgendaPage(agendaIndex-1)}>Anterior</button><button disabled={(agendaIndex+1)*12>=agenda.length} onClick={()=>setAgendaPage(agendaIndex+1)}>Próxima</button></footer>}
     </section>
