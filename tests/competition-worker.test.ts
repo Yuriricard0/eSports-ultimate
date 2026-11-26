@@ -47,6 +47,9 @@ for(const mode of ['MOBA','FPS'] as const)test('temporada completa '+mode+': age
      }else{
        const advanced=await request('advance',{careerId:'a',expectedDay:day,days:30});
        if(next)assert.ok(advanced.career.day<=next.day,'calendário ultrapassou partida do usuário');
+       assert.equal(advanced.report.requestedDays,30);
+       assert.equal(advanced.report.advancedDays,advanced.career.day-day);
+       if(next&&next.day-day<30)assert.equal(advanced.report.blockedFixtureId,next.id);
        day=advanced.career.day;season=(await request('competition-state','a')).seasons[0];
        const due=nextUserFixture(season);
        if(due&&due.day<=day)await assert.rejects(()=>request('advance',{careerId:'a',expectedDay:day,days:1}),/confronto pendente/);

@@ -130,6 +130,7 @@ export function App(){
  const advance=async(days:number)=>{
    if(!career||advancing)return;
    setAdvancing(true);
+   setCalendarReport(null);
    setError('');
    try{
      const {career:updated,report}=await advanceDays(career.id,career.day,days);

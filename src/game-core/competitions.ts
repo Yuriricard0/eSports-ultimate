@@ -197,14 +197,32 @@ export function simulateSeries(teams:[MatchSide,MatchSide],mode:Mode,day:number,
  return {winner:teams[score[0]>score[1]?0:1].id,score,maps,completedDay:day};
 }
 
+export function isScheduledFixture(fixture:Fixture){
+ return !fixture.result&&(fixture.status==='scheduled'||fixture.status===undefined);
+}
+
+export function pendingUserFixtures(season:Season|undefined){
+ return (season?.editions??[]).flatMap(edition=>edition.fixtures
+   .filter(fixture=>isScheduledFixture(fixture)&&(fixture.home==='career'||fixture.away==='career'))
+   .map(fixture=>({edition,fixture})))
+   .sort((a,b)=>a.fixture.day-b.fixture.day||a.fixture.id.localeCompare(b.fixture.id));
+}
+
 export function nextUserFixture(season:Season|undefined){
- return season?.editions.flatMap(e=>e.fixtures).filter(g=>!g.result&&(g.home==='career'||g.away==='career')).sort((a,b)=>a.day-b.day||a.id.localeCompare(b.id))[0];
+ return pendingUserFixtures(season)[0]?.fixture;
+}
+
+export function planCompetitionAdvance(season:Season|undefined,day:number,requested:number){
+ const next=nextUserFixture(season);
+ const days=next?Math.max(0,Math.min(requested,next.day-day)):requested;
+ return {days,stoppedAt:next&&days<requested?next:undefined};
 }
 
 export function playCompetitionFixture(season:Season,fixtureId:string,day:number,teams:[MatchSide,MatchSide],seed:number){
  const edition=season.editions.find(e=>e.fixtures.some(g=>g.id===fixtureId)),game=edition?.fixtures.find(g=>g.id===fixtureId);
  if(!edition||!game)throw Error('Confronto não encontrado.');
- if(game.result)throw Error('Este confronto já foi concluído.');
+ if(game.result||game.status==='completed')throw Error('Este confronto já foi concluído.');
+ if(!isScheduledFixture(game))throw Error('Este confronto não está disponível.');
  if(day<game.day)throw Error('Avance até a data do confronto.');
  if(teams[0].id!==game.home||teams[1].id!==game.away)throw Error('Participantes incompatíveis com o confronto.');
  const result=simulateSeries(teams,edition.mode,day,game.bestOf,hashSeed(seed+':'+game.id));

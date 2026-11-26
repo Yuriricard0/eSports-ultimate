@@ -25,7 +25,7 @@ import {assignAcademy,setTrainingFocus} from '../game-core/academy';
 import type {PlayerTraining,TrainingPlan} from '../game-core/training';
 import {matchSchema,prepareMatch,completeMatch} from '../game-core/match-store';
 import {careerLineup,rivalLineup,matchStrength,applyMatchConditions,type MatchResult,type MatchSide} from '../game-core/matches';
-import {defaultCompetitionConfig,generateSeason,hashSeed,nextUserFixture,playCompetitionFixture,validateCompetitionConfig,type Participant,type Season} from '../game-core/competitions';
+import {defaultCompetitionConfig,generateSeason,hashSeed,isScheduledFixture,planCompetitionAdvance,playCompetitionFixture,validateCompetitionConfig,type Participant,type Season} from '../game-core/competitions';
 import {competitionSchema,latestSeason,nextSeasonStart,storeNewSeason,persistSeason} from '../game-core/competition-store';
 import {initializeFinance,refreshSponsorOffers,acceptSponsor,rejectSponsor,paySponsors,upgradeFacility,facilityEfficiency,type FacilityLevels} from '../game-core/finance';
 import {syncAiAccounts,payAiSalaries,aiCanBuy,aiPurchase,aiHire,aiReceiveTransfer} from '../game-core/ai-finance';
@@ -182,7 +182,7 @@ async function handleRequest(event:MessageEvent){
    return {sides,players};
  };
  const competitionSide=(participant:Participant,players:Player[],mode:Mode,day:number,careerId:string,protectedIds=ownedIds(careerId)):MatchSide=>{
-   const lineup=participant.id==='career'?careerLineup(players,contractsFor(careerId)):rivalLineup(players,participant.id,mode,day);
+   const lineup=participant.id==='career'?careerLineup(players.filter(player=>player.mode===mode),contractsFor(careerId)):rivalLineup(players,participant.id,mode,day);
    if(participant.id!=='career'&&lineup.some(slot=>protectedIds.has(slot.player.id)))throw Error('Vínculo conflitante no elenco rival.');
    if(participant.id!=='career')return {...participant,lineup};
    const current=get(careerId)!;
@@ -191,8 +191,8 @@ async function handleRequest(event:MessageEvent){
  const processAI=(season:Season|undefined,day:number,source:Player[],careerId:string,protectedIds:Set<number>,seed:number)=>{
    let players=source;if(!season)return players;
    while(true){
-     const edition=season.editions.find(e=>e.fixtures.some(g=>!g.result&&g.day<=day&&g.home!=='career'&&g.away!=='career'));
-     const game=edition?.fixtures.find(g=>!g.result&&g.day<=day&&g.home!=='career'&&g.away!=='career');
+     const edition=season.editions.find(e=>e.fixtures.some(g=>isScheduledFixture(g)&&g.day<=day&&g.home!=='career'&&g.away!=='career'));
+     const game=edition?.fixtures.find(g=>isScheduledFixture(g)&&g.day<=day&&g.home!=='career'&&g.away!=='career');
      if(!edition||!game)break;
      const teams=[game.home,game.away].map(id=>competitionSide(edition.participants.find(p=>p.id===id)!,players,edition.mode,day,careerId,protectedIds)) as [MatchSide,MatchSide];
      const result=playCompetitionFixture(season,game.id,day,teams,seed);
@@ -386,7 +386,8 @@ async function handleRequest(event:MessageEvent){
  const season=latestSeason(read,input.careerId),current=get(input.careerId)!;
  const edition=season?.editions.find(e=>e.fixtures.some(g=>g.id===input.id)),game=edition?.fixtures.find(g=>g.id===input.id);
  if(!season||!edition||!game||!current)throw Error('Confronto não encontrado.');
- if(game.result)throw Error('Este confronto já foi concluído.');
+ if(game.result||game.status==='completed')throw Error('Este confronto já foi concluído.');
+ if(!isScheduledFixture(game))throw Error('Este confronto não está disponível.');
  if(game.home!=='career'&&game.away!=='career')throw Error('Os confrontos da IA são automáticos.');
  const catalog=await loadWorld();let players=await marketPlayers(input.careerId);
  const seed=Number(db.selectValue('SELECT seed FROM web_career_world WHERE career_id=?',[input.careerId]));
@@ -446,9 +447,8 @@ async function handleRequest(event:MessageEvent){
  if(![1,7,30].includes(input.days))throw Error('Escolha 1, 7 ou 30 dias.');
  const advancingCareer=get(input.careerId)!;
  const marketCatalog=await loadWorld(),competition=latestSeason(read,input.careerId);
- const next=nextUserFixture(competition);
- if(next&&next.day<=input.expectedDay)throw Error('Dispute o confronto pendente em Competições antes de avançar.');
- const days=Math.min(input.days,next?next.day-input.expectedDay:input.days);
+ const {days,stoppedAt}=planCompetitionAdvance(competition,input.expectedDay,input.days);
+ if(!days)throw Error('Nenhum dia avançado. Dispute o confronto pendente antes de avançar.');
  let players=await marketPlayers(input.careerId);
  const seed=Number(db.selectValue('SELECT seed FROM web_career_world WHERE career_id=?',[input.careerId]));
  const report=advanceCareerDay(run,read,all,input.careerId,input.expectedDay,days,(from,to)=>{
@@ -486,7 +486,7 @@ async function handleRequest(event:MessageEvent){
      const protectedIds=new Set([...legacy,...contracts.filter(c=>c.start_day<=day&&c.end_day>=day).map(c=>c.player_id)]);
      recordDevelopmentNews(run,read,{...advancingCareer,day},beforeDevelopment,players,day,protectedIds);
      players=processMoodEvent(run,read,input.careerId,players,protectedIds,day,seed);
-     if(competition?.editions.some(e=>e.fixtures.some(g=>!g.result&&g.day<=day&&g.home!=='career'&&g.away!=='career'))){
+     if(competition?.editions.some(e=>e.fixtures.some(g=>isScheduledFixture(g)&&g.day<=day&&g.home!=='career'&&g.away!=='career'))){
        players=maintainRosters(players,marketCatalog,protectedIds,day,aiHiring(input.careerId,day));
        players=processAI(competition,day,players,input.careerId,protectedIds,seed);
      }
@@ -523,7 +523,7 @@ async function handleRequest(event:MessageEvent){
    }
  },(from,to)=>paySponsors(run,read,all,input.careerId,from,to));
  report.balance=Number(get(input.careerId)?.balance);
- result={report,career:get(input.careerId)};
+ result={report:{...report,advancedDays:days,requestedDays:input.days,blockedFixtureId:stoppedAt?.id},career:get(input.careerId)};
  }else if(action==='negotiations'){
  result=db.selectObjects(`SELECT n.*,COALESCE(q.fee,0) transfer_fee FROM web_negotiations n LEFT JOIN web_transfer_quotes q ON q.negotiation_id=n.id
    WHERE n.career_id=? ORDER BY opened_day DESC,n.rowid DESC`,[input]);

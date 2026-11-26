@@ -46,7 +46,8 @@ export function CareerCalendar({career,players,contracts,advance,busy,report,onM
     <div className="advance-actions">{[1,7,30].map(days=><button key={days} disabled={busy} onClick={()=>advance(days)}>
       Avançar {days===1?'1 dia':days+' dias'}
     </button>)}</div>
-    {report&&<p role="status">Avanço concluído · {money(report.paid)} pagos · {report.expired} contratos encerrados.</p>}
+    {report&&<p role="status">{report.advancedDays??0} de {report.requestedDays??report.advancedDays??0} dias avançados · {money(report.paid)} pagos · {report.expired} contratos encerrados.
+      {report.blockedFixtureId&&<> Avanço interrompido por um confronto oficial. <button onClick={()=>onOpenFixture(report.blockedFixtureId!)}>Abrir confronto →</button></>}</p>}
     <section className="panel"><div className="players-heading"><h2>Agenda multigaming</h2><button onClick={onCompetitions}>Ver competições →</button></div>
       <div className="world-filters"><select aria-label="Modalidade da agenda" value={mode} onChange={event=>{setMode(event.target.value);setAgendaPage(0);}}>
         <option value="">Todas as modalidades</option><option value="MOBA">MOBA</option><option value="FPS">CS2</option>

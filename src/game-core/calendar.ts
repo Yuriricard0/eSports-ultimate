@@ -50,7 +50,7 @@ export function migrateCalendar(exec:(sql:string)=>void,version:number){
   }
 }
 
-export type CalendarResult={day:number;balance:number;paid:number;outstanding:number;expired:number};
+export type CalendarResult={day:number;balance:number;paid:number;outstanding:number;expired:number;advancedDays?:number;requestedDays?:number;blockedFixtureId?:string};
 
 export function salaryDue(all:All,careerId:string,contract:Row,from:number,to:number){
   const rates=all('SELECT day,salary FROM web_salary_rates WHERE career_id=? AND player_id=? AND start_day=? ORDER BY day',

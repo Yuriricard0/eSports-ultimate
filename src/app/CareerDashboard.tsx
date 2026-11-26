@@ -11,7 +11,7 @@ import type {WorldCatalog} from '../game-core/world';
 import {NewsPanel} from './News';
 import {ClubDna} from './ClubDna';
 import {ChemistryMap} from './ChemistryMap';
-import {nextUserFixture,type Season} from '../game-core/competitions';
+import {nextUserFixture,pendingUserFixtures,type Season} from '../game-core/competitions';
 import type {StoredMatch} from '../game-core/match-store';
 import {careerAgenda} from '../game-core/career-agenda';
 import {listCompetitions,listFinances,listMatches,listNegotiations} from '../persistence/repository';
@@ -25,12 +25,14 @@ export function CareerDashboard({career,country,players,contracts,emblem,navigat
 }) {
   const [pending,setPending]=useState<{careerId:string;day:number;match:boolean;market:number;sponsors:number}|null>(null);
   const [schedule,setSchedule]=useState<{careerId:string;seasons:Season[];matches:StoredMatch[]}|null>(null);
+  const [scheduleError,setScheduleError]=useState('');
   useEffect(()=>{
     let active=true;
+    setScheduleError('');
     const competitionsRequest=listCompetitions(career.id);
-    void Promise.all([competitionsRequest,listMatches(career.id)]).then(([state,matches])=>{
+    void Promise.all([competitionsRequest,listMatches(career.id).catch(()=>[])]).then(([state,matches])=>{
       if(active)setSchedule({careerId:career.id,seasons:state.seasons,matches});
-    }).catch(()=>{if(active)setSchedule(null);});
+    }).catch(()=>{if(active){setSchedule(null);setScheduleError('Não foi possível consultar a agenda oficial.');}});
     void Promise.all([competitionsRequest,listNegotiations(career.id),listFinances(career.id)]).then(([competitions,negotiations,finances])=>{
       if(!active)return;
       const day=career.day;
@@ -42,6 +44,11 @@ export function CareerDashboard({career,country,players,contracts,emblem,navigat
     }).catch(()=>{if(active)setPending(null);});
     return ()=>{active=false;};
   },[career]);
+  const scheduleReady=schedule?.careerId===career.id;
+  const official=pendingUserFixtures(scheduleReady?schedule?.seasons[0]:undefined);
+  const due=official.filter(({fixture})=>fixture.day<=career.day);
+  const preview=due.length?due:official.slice(0,1);
+  const phases={regular:'Rodada',quarterfinal:'Quartas de final',semifinal:'Semifinal',final:'Final'};
   const decisions=pending?.careerId===career.id&&pending.day===career.day?pending:null;
   const count=decisions?Number(decisions.match)+decisions.market+decisions.sponsors:0;
   const upcoming=careerAgenda(career,schedule?.careerId===career.id?schedule.seasons:[],schedule?.careerId===career.id?schedule.matches:[],contracts,
@@ -63,10 +70,10 @@ export function CareerDashboard({career,country,players,contracts,emblem,navigat
   })).sort((a,b)=>b.score-a.score);
   const date=formatCareerDay(career.day);
   return <div className="career-dashboard">
-    <div className="players-heading"><h1>Central da Organização</h1><button className="primary" disabled={busy} onClick={advance}>{busy?'Avançando…':'Avançar dia →'}</button></div>
+    <div className="players-heading"><h1>Central da Organização</h1><button className="primary" disabled={busy||due.length>0} onClick={advance}>{busy?'Avançando…':'Avançar dia →'}</button></div>
     <p className="central-subtitle">{date} · {career.mode} · {country}</p>
     {!!count&&decisions&&<details className="career-decisions"><summary>{count} {count===1?'decisão pendente':'decisões pendentes'}</summary>
-      {decisions.match&&<button onClick={()=>navigate('competitions')}>Confronto oficial disponível</button>}
+      {decisions.match&&<button onClick={()=>{if(due[0])onNewsFixture(due[0].fixture.id);else navigate('competitions');}}>Confronto oficial disponível</button>}
       {!!decisions.market&&<button onClick={()=>navigate('market')}>Negociações ({decisions.market})</button>}
       {!!decisions.sponsors&&<button onClick={()=>navigate('finances')}>Propostas de patrocínio ({decisions.sponsors})</button>}
     </details>}
@@ -80,11 +87,26 @@ export function CareerDashboard({career,country,players,contracts,emblem,navigat
       <div>
         <section className="central-panel">
           <h2>Próxima partida</h2>
-          <div className="fixture-preview"><div>{emblem}<strong>{career.name}</strong></div>
-            <span aria-hidden="true">×</span><div><span className="fixture-placeholder" aria-hidden="true">◇</span>Adversário a definir</div>
-          </div>
-          <p>Sem partida agendada.</p>
-          <button className="primary" onClick={()=>navigate('matches')}>Disputar amistoso →</button>
+          {scheduleError&&<p role="alert">{scheduleError}</p>}
+          {!scheduleReady&&!scheduleError&&<p role="status">Consultando a agenda oficial…</p>}
+          {scheduleReady&&preview.length===0&&<>
+            <p>Sem partida oficial agendada.</p>
+            <button className="primary" onClick={()=>navigate('matches')}>Disputar amistoso →</button>
+          </>}
+          {preview.map(({edition,fixture})=>{
+            const opponentId=fixture.home==='career'?fixture.away:fixture.home;
+            const opponent=edition.participants.find(team=>team.id===opponentId);
+            const status=fixture.day<career.day?'Partida atrasada':fixture.day===career.day?'Dia de jogo':'Partida futura';
+            return <article key={fixture.id}>
+              <div className="fixture-preview"><div>{emblem}<strong>{career.name}</strong></div>
+                <span aria-hidden="true">×</span><div>{opponent?.logo?<img width={64} height={64} style={{objectFit:'contain'}} src={opponent.logo.replace('res://','/')} alt=""/>:<span className="fixture-placeholder">{opponent?.code??'◇'}</span>}
+                <strong>{opponent?.name??'Adversário indisponível'}</strong></div>
+              </div>
+              <p><strong>{status}</strong> · {formatCareerDay(fixture.day)} · {edition.mode==='FPS'?'CS2':'MOBA'} · {edition.name} · {phases[fixture.phase]}{fixture.phase==='regular'?' '+fixture.round:''} · MD{fixture.bestOf}</p>
+              {!opponent&&<p role="alert">O participante {opponentId} não está registrado nesta edição.</p>}
+              <button className="primary" onClick={()=>onNewsFixture(fixture.id)}>{fixture.day<=career.day?'Disputar partida':'Ver confronto'} →</button>
+            </article>;
+          })}
           <button className="primary" onClick={()=>navigate('roster')}>Ver meu elenco →</button>
         </section>
         <section className="central-panel"><h2>Nosso elenco</h2>

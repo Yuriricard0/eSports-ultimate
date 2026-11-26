@@ -1,6 +1,6 @@
 import type {Mode} from './attributes.ts';
 import type {Career} from './career.ts';
-import type {Season} from './competitions.ts';
+import {isScheduledFixture,type Season} from './competitions.ts';
 import type {StoredMatch} from './match-store.ts';
 import type {Contract} from './recruitment.ts';
 import {seasonBoundaries} from './renewal.ts';
@@ -11,7 +11,7 @@ export function careerAgenda(career:Pick<Career,'name'|'mode'|'day'>,seasons:Sea
  const mode=career.mode==='FPS'?'FPS':'MOBA';
  const entries:AgendaEvent[]=(seasons[0]?.editions??[]).flatMap(edition=>{
    const teams=new Map(edition.participants.map(team=>[team.id,team.name]));
-   return edition.fixtures.filter(game=>!game.result).map(game=>{
+   return edition.fixtures.filter(isScheduledFixture).map(game=>{
      const own=game.home==='career'||game.away==='career';
      const teamName=(id:string)=>id==='career'?career.name:teams.get(id)??id;
      return {id:`official:${game.id}`,day:game.day,mode:edition.mode,own,target:own?'fixture':null,fixtureId:game.id,

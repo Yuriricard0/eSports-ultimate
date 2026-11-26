@@ -151,3 +151,17 @@ test('catálogo com poucos rivais elegíveis não concede vaga na elite',()=>{
    assert.throws(()=>generateSeason(f.career,incomplete,f.players,f.contracts,1,1),/faltam equipes elegíveis/);
  }
 });
+import {pendingUserFixtures,planCompetitionAdvance} from '../src/game-core/competitions.ts';
+test('agenda reúne pendências simultâneas de MOBA e FPS e limita avanço ao primeiro compromisso',()=>{
+ const {career,players,contracts}=fixture('MOBA');
+ const season=generateSeason(career,catalog,players,contracts,1,1);
+ const edition=season.editions.find(e=>e.participants.some(p=>p.id==='career'))!;
+ const game=edition.fixtures.find(f=>f.home==='career'||f.away==='career')!;
+ const fps={...edition,id:'fps',mode:'FPS' as const,fixtures:[{...game,id:'fps-game',competitionId:'fps'}]};
+ const schedule:Season={...season,editions:[{...edition,fixtures:[game]},fps]};
+ assert.equal(pendingUserFixtures(schedule).length,2);
+ for(const days of [1,7,30]) assert.equal(planCompetitionAdvance(schedule,game.day-2,days).days,Math.min(2,days));
+ for(const day of [game.day,game.day+1])assert.equal(planCompetitionAdvance(schedule,day,30).days,0);
+ game.status='completed';
+ assert.deepEqual(pendingUserFixtures(schedule).map(row=>row.fixture.id),['fps-game']);
+});

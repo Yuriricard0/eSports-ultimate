@@ -1,3 +1,4 @@
+import {isScheduledFixture} from '../game-core/competitions';
 import {useEffect,useMemo,useState} from 'react';
 import type {Career} from '../game-core/career';
 import type {Contract,Player} from '../game-core/recruitment';
@@ -110,21 +111,23 @@ function CompetitiveMatch({career,players,contracts,fixtureId,onUpdated,onCompet
  useEffect(()=>{let active=true;listCompetitions(career.id).then(data=>{if(active)setState(data);}).catch(reason=>{if(active)setError(String(reason));});return()=>{active=false;};},[career,fixtureId]);
  const edition=state?.seasons.flatMap(s=>s.editions).find(e=>e.fixtures.some(g=>g.id===fixtureId));
  const game=edition?.fixtures.find(g=>g.id===fixtureId);
- const teams=game&&edition?[game.home,game.away].map(id=>edition.participants.find(p=>p.id===id)!):[];
- const lineups=teams.map(team=>team.id==='career'?careerLineup(players,contracts):rivalLineup(players,team.id,career.mode as Mode,career.day));
+ const teams=game&&edition?[game.home,game.away].flatMap(id=>edition.participants.filter(p=>p.id===id)):[];
+ const fixtureMode=edition?.mode??career.mode as Mode;
+ const lineups=teams.map(team=>team.id==='career'?careerLineup(players.filter(player=>player.mode===fixtureMode),contracts):rivalLineup(players,team.id,fixtureMode,career.day));
  const valid=lineups.length===2&&lineups.every(lineup=>lineup.length===5);
  const own=game&&(game.home==='career'||game.away==='career');
  return <>
    <div className="players-heading"><h1>Confronto de campeonato</h1><button onClick={onCompetitions}>← Competições</button></div>
    {error&&<p role="alert">{error}</p>}{!state&&!error&&<p role="status">Carregando confronto…</p>}
    {state&&!game&&<p>Confronto não encontrado.</p>}
-   {game&&edition&&<section className="panel">
+   {game&&teams.length!==2&&<p role="alert">Confronto inválido: faltam participantes na edição.</p>}
+   {game&&edition&&teams.length===2&&<section className="panel">
      <h2>{edition.name} · MD{game.bestOf}</h2><p>{formatCareerDay(game.day)} · {edition.prestige} · {edition.region}</p>
      <div className="match-scoreboard"><TeamBadge team={teams[0]}/><strong>{game.result?game.result.score.join(' × '):'×'}</strong><TeamBadge team={teams[1]}/></div>
      {game.result?<>
        <p><strong>{teams.find(team=>team.id===game.result!.winner)?.name} venceu a série.</strong> {game.result.maps.length} {edition.mode==='FPS'?'mapas':'jogos'} disputados.</p>
        <div className="advance-actions">{game.result.maps.map((map,index)=><button aria-pressed={mapIndex===index} key={index} onClick={()=>setMap(index)}>{edition.mode==='FPS'?'Mapa':'Jogo'} {index+1} · {map.score.join(' × ')}</button>)}</div>
-     </>:<>
+     </>:!isScheduledFixture(game)?<p>Confronto indisponível para disputa.</p>:<>
        <div className="match-lineups">{lineups.map((lineup,index)=><div key={index}><h3>{teams[index].name}</h3>{lineup.map(slot=><div className="match-lineup-player" key={slot.player.id}><PlayerPortrait index={slot.player.portraitIndex}/><span>{slot.player.nickname}<small>{roleNames[slot.role]} · OVR {Math.round(slot.player.overall)}</small></span></div>)}</div>)}</div>
        {career.day<game.day&&<p>Avance o calendário até {formatCareerDay(game.day)} para disputar esta série.</p>}
        {!valid&&<p role="alert">Complete as cinco funções titulares do elenco principal. <button onClick={onRoster}>Abrir elenco →</button></p>}

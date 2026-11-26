@@ -63,3 +63,19 @@ test('Central conta apenas decisões disponíveis no dia da carreira',async()=>{
  app.button('Negociações').props.onClick();
  assert.deepEqual(destinations,['market']);
 });
+
+test('Central apresenta as duas partidas pendentes e abre a escolhida pelo ID após reabrir',async()=>{
+ const opened:string[]=[];
+ const editions=['MOBA','FPS'].map(mode=>({mode,name:'Liga '+mode,participants:[{id:'career',name:'Aurora'},{id:mode,name:'Rival '+mode,code:mode}],
+  fixtures:[{id:'g-'+mode,home:'career',away:mode,day:10,phase:'regular',round:1,bestOf:3,status:'scheduled'}]}));
+ const app=appHarness({
+   listCompetitions:async()=>({seasons:[{editions}]}),listMatches:async()=>[],
+   listNegotiations:async()=>[],listFinances:async()=>({reputation:40,sponsors:[]}),
+ },[],'CareerDashboard',{career:{id:'a',name:'Aurora',mode:'MOBA',day:10},players:[],contracts:[],onNewsFixture:(id:string)=>opened.push(id)});
+ app.render();await app.flush();
+ assert.match(app.text(),/Rival MOBA/);assert.match(app.text(),/Rival FPS/);
+ assert.match(app.text(),/Dia de jogo/);assert.doesNotMatch(app.text(),/Disputar amistoso/);
+ app.button('Disputar partida').props.onClick();
+ assert.deepEqual(opened,['g-FPS']);
+ app.remount();await app.flush();assert.match(app.text(),/Rival MOBA/);
+});
