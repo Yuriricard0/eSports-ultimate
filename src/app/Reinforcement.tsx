@@ -61,7 +61,9 @@ export function SigningPresentation({career,player,onClose}:{career:Career;playe
  const country=/^[A-Z]{2}$/.test(player.country)?regions.of(player.country)??player.country:player.country;
  return <section className="signing-presentation" aria-label="Apresentação do reforço"
    style={{'--signing-primary':identity.primary,'--signing-secondary':identity.secondary} as CSSProperties}>
-   <div className="signing-portrait"><PlayerPortrait index={player.portraitIndex}/></div>
+   <div className="signing-portrait"><PlayerPortrait index={player.portraitIndex}/>
+     {career.uniforms?.home&&<Jersey uniform={career.uniforms.home} identity={identity} code={career.code}/>}
+   </div>
    <div className="signing-copy">
      <div className="signing-club"><Emblem identity={identity} code={career.code}/><strong>{career.name}</strong></div>
      <h2>{player.nickname}</h2>
@@ -70,3 +72,4 @@ export function SigningPresentation({career,player,onClose}:{career:Career;playe
    </div>
  </section>;
 }
+import {Jersey} from './UniformEditor';

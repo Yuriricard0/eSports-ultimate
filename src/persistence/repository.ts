@@ -3,6 +3,7 @@ import type {Negotiation,NegotiationState,Offer} from '../game-core/negotiation'
 import type {CalendarResult} from '../game-core/calendar';
 import type {Contract,Player} from '../game-core/recruitment';
 import type {Identity} from '../game-core/identity';
+import type {Uniform,UniformVariant} from '../game-core/uniform';
 import type {SaleOption} from '../game-core/market';
 import type {PlayerTraining,TrainingFocus} from '../game-core/training';
 import type {StoredMatch} from '../game-core/match-store';
@@ -39,7 +40,7 @@ export async function initialize(){
  }).catch(reject);
  });
 }
-const saveActions=new Set(['delete','create','import','identity','rename','starter','prepare-match','play-match','cancel-match',
+const saveActions=new Set(['delete','create','import','identity','uniform','rename','starter','prepare-match','play-match','cancel-match',
  'start-season','competition-config','enroll-competition','play-competition','sponsor-accept','sponsor-reject','facility-upgrade','equipment-buy','equipment-assign','assign-academy',
  'set-training','submit-offer','confirm-offer','cancel-offer','renew-contract','decline-renewal','depart-player','advance',
  'lineup-favorite-create','lineup-favorite-rename','lineup-favorite-delete','lineup-favorite-apply','create-loan','start-tryout','dismiss-tryout','youth-coach',
@@ -61,6 +62,7 @@ export const exportCareers=()=>request<Uint8Array>('export');
 export const importCareers=(bytes:ArrayBuffer,kind:'web'|'godot')=>request<Career[]>('import',{bytes,kind});
 export const exportGodotSource=(careerId:string)=>request<Uint8Array>('godot-source',careerId);
 export const saveIdentity=(careerId:string,identity:Identity)=>request<Career>('identity',{careerId,identity});
+export const saveUniform=(careerId:string,variant:UniformVariant,config:Uniform)=>request<Career>('uniform',{careerId,variant,config});
 export const renameSave=(careerId:string,name:string)=>request<Career[]>('rename',{careerId,name});
 export const listContracts=(id:string)=>request<Contract[]>('contracts',id);
 export const listLoans=(id:string)=>request<Loan[]>('loans',id);

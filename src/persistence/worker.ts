@@ -17,6 +17,7 @@ import {cashProjection,paymentPeriods,type ScheduledCash} from '../game-core/fin
 import {countryRegions} from '../game-core/countries';
 import {equipmentCatalog,equipmentCategories,setupTraining,sponsorCashOnlyValue,type EquipmentAssignment} from '../game-core/equipment';
 import {defaultIdentity,phaseOneSchema,validateIdentity} from '../game-core/identity';
+import {validateUniform,uniformVariants,type Uniforms} from '../game-core/uniform';
 import {assertBackupFile,readGodotCareer,readGodotRoster,restoreWebBackup} from '../game-core/backup';
 import type {Mode} from '../game-core/attributes';
 import {startingEntry} from '../game-core/entry';
@@ -51,7 +52,8 @@ function publicPlayer({ceiling:_,temperament:__,perkEvents:___,perkInfluences,..
  return {...player,perks,perkInfluences:publicPerkInfluences(perkInfluences,perks),
    perkHistory:discovered?player.perkHistory:player.perkHistory?.filter(event=>perks.some(perk=>perk.id===event.id))};
 }
-const careerQuery=`SELECT careers.*, w.config, COALESCE(s.name,'') AS saveName, v.created_version AS createdVersion,
+const careerQuery=`SELECT careers.*, w.config, (SELECT config FROM web_uniforms u WHERE u.career_id=careers.id AND u.variant='home') AS uniformHome,
+ (SELECT config FROM web_uniforms u WHERE u.career_id=careers.id AND u.variant='away') AS uniformAway, COALESCE(s.name,'') AS saveName, v.created_version AS createdVersion,
  e.league_id AS entryLeague,e.kind AS entryKind,e.displaced_team_id AS displacedTeam,
  EXISTS(SELECT 1 FROM web_godot_source g WHERE g.career_id=careers.id) AS hasGodotSource,
  MIN(100,40+COALESCE((SELECT SUM(reputation) FROM web_competition_awards a WHERE a.career_id=careers.id AND a.organization='career'),0)) AS reputation
@@ -60,8 +62,11 @@ const careerQuery=`SELECT careers.*, w.config, COALESCE(s.name,'') AS saveName, 
  LEFT JOIN web_save_versions v ON v.career_id=careers.id`;
 function hydrate(row:Record<string,unknown>|undefined){
  if(!row)return undefined;
- const {config,entryLeague,entryKind,displacedTeam,...data}=row;
- const career=data as Career;
+ const {config,entryLeague,entryKind,displacedTeam,uniformHome,uniformAway,...data}=row;
+ const career=data as Career&{uniforms?:Uniforms};
+ for(const [variant,value] of [['home',uniformHome],['away',uniformAway]] as const)if(typeof value==='string'){
+   try{(career.uniforms??={})[variant]=validateUniform(JSON.parse(value));}catch{}
+ }
  if(typeof entryLeague==='string'&&(entryKind==='career_slot'||entryKind==='open_circuit')){
    career.entry={leagueId:entryLeague,kind:entryKind,displacedTeamId:typeof displacedTeam==='string'?displacedTeam:null};
  }
@@ -244,7 +249,8 @@ async function handleRequest(event:MessageEvent){
    if(participant.id!=='career'&&lineup.some(slot=>protectedIds.has(slot.player.id)&&!outgoing.has(slot.player.id)))throw Error('Vínculo conflitante no elenco rival.');
    if(participant.id!=='career')return {...participant,lineup};
    const current=get(careerId)!;
-   return {...participant,identity:current.identity??{...defaultIdentity,primary:current.color,symbol:current.symbol},lineup};
+   const variant=participant.id==='career'&&current.uniforms?.home;
+   return {...participant,identity:current.identity??{...defaultIdentity,primary:current.color,symbol:current.symbol},...(variant?{uniform:variant}:{}),lineup};
  };
  const processAI=(season:Season|undefined,day:number,source:Player[],careerId:string,protectedIds:Set<number>,seed:number)=>{
    let players=source;if(!season)return players;
@@ -285,6 +291,14 @@ async function handleRequest(event:MessageEvent){
    initializeFinance(run,read,all,careerId);
  });
  result=get(careerId);
+ }else if(action==='uniform'){
+ const current=get(input.careerId);
+ if(!current||!uniformVariants.includes(input.variant))throw Error('Uniforme inválido.');
+ const uniform=validateUniform(input.config);
+ if(uniform.sponsor&&!read("SELECT 1 FROM web_sponsors WHERE career_id=? AND company=? AND state='accepted' AND accepted_day+duration-1>=?",[current.id,uniform.sponsor,current.day]))
+   throw Error('Escolha um patrocinador ativo.');
+ run('INSERT INTO web_uniforms VALUES(?,?,?) ON CONFLICT(career_id,variant) DO UPDATE SET config=excluded.config',[current.id,input.variant,JSON.stringify(uniform)]);
+ result=get(current.id);
  }else if(action==='identity'){
  const identity=validateIdentity(input.identity);
  if(!get(input.careerId))throw Error('Carreira não encontrada.');
@@ -733,6 +747,7 @@ async function handleRequest(event:MessageEvent){
    const loans=loansFor(current.id);
    lockCompetitionRosters(season,current.day,day=>registrationIds(current.id,day,loans));
    const teams=[game.home,game.away].map(id=>competitionSide(edition.participants.find(p=>p.id===id)!,players,edition.mode,current.day,input.careerId,undefined,edition.importRegion)) as [MatchSide,MatchSide];
+   if(game.away==='career'&&current.uniforms?.away)teams[1].uniform=current.uniforms.away;
    if(edition.registration){
      const submitted=competitionLineup(edition,players,loanContracts(players,contractsFor(current.id),loans,current.day),current.day);
      if(!submitted.valid&&!input.forfeit)throw Error('A escalação contém atletas inelegíveis ou funções sem titular. Selecione reservas registrados no elenco.');

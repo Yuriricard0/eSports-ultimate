@@ -18,6 +18,7 @@ const tables={
   web_finances:['career_id','player_id','day','amount'],
   web_payroll:['career_id','player_id','start_day','due_day','amount','paid'],
   web_identity:['career_id','config'],
+  web_uniforms:['career_id','variant','config'],
   web_godot_source:['career_id','file'],
   web_save_names:['career_id','name'],
   web_save_versions:['career_id','created_version'],

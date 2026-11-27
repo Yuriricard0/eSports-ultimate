@@ -398,6 +398,22 @@ html[data-contrast=high]{--muted:#c8d1e4}html[data-contrast=high] button:not(:di
 .headquarters-summary h3{margin:.25em 0}.headquarters-summary ul{padding-left:19px}
 .headquarters-link{display:inline-block;margin:8px 0 8px 12px;color:#bcd7c5}
 .headquarters{scroll-margin-top:16px}
+.uniform-workspace{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:16px}
+.uniform-poster{display:grid;justify-items:center;gap:12px;min-width:0;padding:25px 18px;background:radial-gradient(ellipse at 50% 42%,#354155,#171c2b 68%);border:1px solid #3f4e64;border-radius:11px}
+.uniform-poster small{color:#bacae3}.uniform-poster h2{margin:0}
+.uniform-controls{display:grid;align-content:start;gap:12px;padding:16px;background:#171e2b;border:1px solid #344259;border-radius:9px}
+.uniform-controls label{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.uniform-controls select{max-width:100%}
+.uniform-colors{display:flex;flex-wrap:wrap;gap:12px}.uniform-colors label{display:grid;gap:5px}
+.jersey{position:relative;display:grid;place-items:center;container-type:inline-size;width:100%;max-width:310px;aspect-ratio:1.05;isolation:isolate;color:var(--jersey-detail);background:linear-gradient(105deg,#0005,transparent 26%,#fff1 52%,#0007),var(--jersey-main);clip-path:polygon(17% 12%,37% 4%,42% 8%,58% 8%,63% 4%,83% 12%,99% 39%,80% 49%,76% 43%,77% 94%,70% 97%,30% 97%,23% 94%,24% 43%,20% 49%,1% 39%)}
+.jersey::before{content:'';position:absolute;inset:0;z-index:-1;background:linear-gradient(110deg,#ffffff18,transparent 28%,#0003 74%,transparent);opacity:.8}
+.jersey-faixa{background:linear-gradient(105deg,#0006,transparent 26%,#fff1 52%,#0007),linear-gradient(90deg,var(--jersey-main) 40%,var(--jersey-secondary) 40% 60%,var(--jersey-main) 60%)}
+.jersey-listras{background:linear-gradient(105deg,#0005,transparent 52%,#0007),repeating-linear-gradient(90deg,var(--jersey-main) 0 10%,var(--jersey-secondary) 10% 18%)}
+.jersey-diagonal{background:linear-gradient(105deg,#0005,transparent 52%,#0007),linear-gradient(145deg,var(--jersey-main) 38%,var(--jersey-secondary) 38% 58%,var(--jersey-main) 58%)}
+.jersey-collar{position:absolute;top:2%;left:39%;width:22%;height:17%;border:3px solid var(--jersey-detail);background:#181e2b;border-radius:0 0 55% 55%}
+.jersey-crest{position:absolute;top:25%;left:57%;width:13%}.jersey-crest .club-emblem{width:100%;height:auto;aspect-ratio:1;--emblem-border:1px!important}.jersey-crest .club-emblem strong{display:none}
+.jersey>strong{position:absolute;top:27%;left:33%;font-size:6cqw}.jersey>span{position:absolute;top:53%;left:27%;width:46%;text-align:center;font-weight:800;font-size:6cqw;overflow-wrap:anywhere}
+.signing-portrait>.jersey,.trophy-ceremony .jersey,.match-team-badge>.jersey{width:96px;max-width:100%;margin:7px auto}
+@media(max-width:650px){.uniform-workspace{grid-template-columns:1fr}.uniform-poster>.jersey{max-width:245px}}
 @media(max-width:620px){.headquarters-stages{grid-template-columns:repeat(2,minmax(0,1fr))}.headquarters-summary{grid-template-columns:1fr}}
 @media(max-width:640px){.setup-board{grid-template-columns:1fr}.equipment-heading{padding:12px;flex-wrap:wrap}}
 @media(max-width:550px){.trophy-gallery .trophy-spotlight{grid-template-columns:1fr}.trophy-spotlight .trophy-card-stage .trophy-art{max-height:280px}}

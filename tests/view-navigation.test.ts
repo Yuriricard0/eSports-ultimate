@@ -35,6 +35,19 @@ function portalFixture(){
  return {season,edition};
 }
 
+test('editor de uniformes alterna duas versões independentes e mantém o escudo na prévia',async()=>{
+ const app=appHarness({listFinances:async()=>({sponsors:[]})},[],'UniformEditor',{
+   career:{id:'uniform-test',name:'Nova Wolves',code:'NVW',mode:'MOBA',color:'#aa1133',symbol:'animals_wolf',day:10},onUpdated:async()=>{},
+ });
+ app.render();await app.flush();
+ assert.match(app.text(),/Editor de Uniformes/);
+ assert.match(app.text(),/Exportar PNG/);
+ app.button('Alternativa').props.onClick();app.render();
+ assert.match(app.text(),/Alternativa.*NVW/);
+ app.button('Principal').props.onClick();app.render();
+ assert.match(app.text(),/Principal.*NVW/);
+});
+
 test('loja filtra o catálogo, abre o produto correto e mantém inventário e setups acessíveis',()=>{
  let bought='';
  const app=appHarness({},[],'EquipmentShop',{career:{mode:'FPS'},players:[],busy:false,data:{balance:9999999,equipment:[],setups:[],equipmentPlayers:[]},

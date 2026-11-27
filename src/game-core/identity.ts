@@ -51,6 +51,7 @@ export function validateIdentity(value:unknown):Identity{
 
 export const phaseOneSchema=`
 CREATE TABLE IF NOT EXISTS web_identity(career_id TEXT PRIMARY KEY REFERENCES careers(id) ON DELETE CASCADE, config TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS web_uniforms(career_id TEXT NOT NULL REFERENCES careers(id) ON DELETE CASCADE,variant TEXT NOT NULL CHECK(variant IN ('home','away')),config TEXT NOT NULL,PRIMARY KEY(career_id,variant));
 CREATE TABLE IF NOT EXISTS web_godot_source(career_id TEXT PRIMARY KEY REFERENCES careers(id) ON DELETE CASCADE, file BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS web_save_names(career_id TEXT PRIMARY KEY REFERENCES careers(id) ON DELETE CASCADE, name TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS web_career_entry(career_id TEXT PRIMARY KEY REFERENCES careers(id) ON DELETE CASCADE, league_id TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('career_slot','open_circuit')), displaced_team_id TEXT);

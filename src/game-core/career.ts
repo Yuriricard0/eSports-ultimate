@@ -3,7 +3,7 @@ import {symbols} from './symbols.ts';
 import type {Identity} from './identity.ts';
 import type {CareerEntry} from './entry.ts';
 export const budgets:Record<string,number>={'Fácil':50000000,'Normal':25000000,'Difícil':12500000,'Realista':7500000};
-export type Career={id:string;name:string;code:string;country:string;mode:string;difficulty:string;balance:number;color:string;symbol:string;created:string;day:number;identity?:Identity;hasGodotSource?:boolean;saveName?:string;entry?:CareerEntry;reputation?:number;createdVersion?:string|null};
+export type Career={id:string;name:string;code:string;country:string;mode:string;difficulty:string;balance:number;color:string;symbol:string;created:string;day:number;identity?:Identity;uniforms?:import('./uniform.ts').Uniforms;hasGodotSource?:boolean;saveName?:string;entry?:CareerEntry;reputation?:number;createdVersion?:string|null};
 export function validateSaveName(value:unknown){
  if(typeof value!=='string'||value.trim().length>60)throw Error('O nome do save deve ter até 60 caracteres.');
  return value.trim();

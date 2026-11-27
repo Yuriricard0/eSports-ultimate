@@ -10,6 +10,7 @@ import {Emblem} from './IdentityEditor';
 import {PlayerPortrait} from './PlayerPortrait';
 import {roleNames} from './Players';
 import {TrophyArt} from './TrophyArt';
+import {Jersey} from './UniformEditor';
 
 type Title=ReturnType<typeof competitionTitles>[number];
 
@@ -43,6 +44,7 @@ export function TitleCelebration({title,edition,season,close}:{title:Championshi
    <TrophyArt event={edition}/>
    <div><span className="event-kicker">{edition.name} · {season.year}</span>
      <ChampionBadge team={title.champion}/><h2>{title.champion.name} conquista o título</h2>
+     {title.champion.uniform&&<Jersey uniform={title.champion.uniform} code={title.champion.code} identity={title.champion.identity}/>}
      {title.runnerUp&&score&&<p>{title.champion.name} {score.join(' × ')} {title.runnerUp.name}</p>}
      {mvp&&<p>MVP da final · {mvp.athlete.nickname}</p>}
      <p>{title.roster.map(player=>player.nickname).join(' · ')}</p>

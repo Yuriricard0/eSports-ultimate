@@ -21,11 +21,12 @@ import {listCompetitions,playCompetitiveFixture,type CompetitionState} from '../
 import {tacticalMaps,type Strategy} from '../game-core/match-tactics';
 import {MatchDebrief,MatchPreparation,RoleEvidence,TacticalBoard} from './MatchTactical';
 import {TitleCelebration} from './TrophyRoom';
+import {Jersey} from './UniformEditor';
 
 function TeamBadge({team}:{team:MatchTeam}){
  return <div className="match-team-badge">{team.identity?<Emblem identity={team.identity} code={team.code}/>:
    team.logo?<img src={team.logo.replace('res://','/')} alt={'Escudo de '+team.name}/>:<span className="team-monogram">{team.code}</span>}
-   <strong>{team.name}</strong></div>;
+   <strong>{team.name}</strong>{team.uniform&&<Jersey uniform={team.uniform} identity={team.identity} code={team.code}/>}</div>;
 }
 
 export function Matches(props:Parameters<typeof FriendlyMatches>[0]&{fixtureId?:string;onCompetitions:()=>void}){

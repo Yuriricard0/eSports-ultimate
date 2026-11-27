@@ -9,7 +9,7 @@ import {mapAffinity,objectiveNames,phaseNames,phasePlan,phaseStrength,preferredS
 
 type Side=0|1;
 export type MatchStarter={player:Player;role:string;startDay:number};
-export type MatchSide={id:string;name:string;code:string;logo:string;identity?:Identity;lineup:MatchStarter[]};
+export type MatchSide={id:string;name:string;code:string;logo:string;identity?:Identity;uniform?:import('./uniform.ts').Uniform;lineup:MatchStarter[]};
 export type MatchTeam=Omit<MatchSide,'lineup'>;
 export type MatchStat={playerId:number;team:Side;nickname:string;role:string;kills:number;deaths:number;assists:number;roundsWon:number;rating?:number;contribution?:number;portraitIndex?:number};
 export type MatchEvent={at:number;kind:'early'|'fight'|'objective'|'comeback'|'round'|'victory'|'plant'|'defuse';team:Side;text:string;score:[number,number]};
