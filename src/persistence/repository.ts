@@ -108,7 +108,7 @@ export const playCompetitiveFixture=(careerId:string,id:string,strategy?:Strateg
 export type Sponsor={id:string;company:string;payment:number;duration:number;min_reputation:number;offered_day:number;expires_day:number;state:'pending'|'accepted'|'rejected'|'expired';accepted_day:number};
 export type FinanceState={balance:number;reputation:number;recognition:number;periodStart:number;periodEnd:number;income:number;expenses:number;result:number;payroll:number;outstanding:number;openingBalance:number;ledgerTotal:number;projection:import('../game-core/finance-projection').FinanceProjection;
  seasons:{number:number;year:number;startDay:number}[];sponsors:Sponsor[];facilities:{kind:FacilityKind;level:number;upgraded_day:number}[];equipment:import('../game-core/equipment').EquipmentStock[];
- setups:import('../game-core/equipment').EquipmentAssignment[];equipmentPlayers:number[];
+ setups:import('../game-core/equipment').EquipmentAssignment[];equipmentPlayers:number[];facilityInvestment:number;
  transactions:{event_key:string;day:number;category:CashCategory;amount:number;description:string}[]};
 export const listFinances=(careerId:string,season=0)=>request<FinanceState>('finance-state',{careerId,season});
 export const acceptSponsorship=(careerId:string,id:string)=>request<Career>('sponsor-accept',{careerId,id});

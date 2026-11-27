@@ -12,6 +12,7 @@ import {developPlayer} from '../src/game-core/development.ts';
 import {definitions} from '../src/game-core/attributes.ts';
 import {departPlayer} from '../src/game-core/market.ts';
 import {commercialRecognition} from '../src/game-core/finance.ts';
+import {headquartersStage} from '../src/game-core/headquarters.ts';
 
 const player:Player={id:7,nickname:'Young',name:'Young Silva',mode:'MOBA',role:'top',overall:50,organization:null,team:null,country:'BR',birthDay:-6900,portraitIndex:0,estimateLow:70,estimateHigh:80,ceiling:80,attributes:Object.fromEntries(definitions.MOBA.map(key=>['moba_'+key,50]))};
 function setup(){
@@ -84,6 +85,19 @@ test('melhorias debitam custo, limitam nível e bônus não altera ganho ao clic
  const base=developPlayer(player,1,31);assert.ok(trained.overall>base.overall&&trained.overall-base.overall<.1);
  assert.equal(developPlayer(player,1,30,[{focus:'balanced',fromDay:1,toDay:365,efficiency}]),player);
  db.exec('UPDATE careers SET balance=1');assert.throws(()=>upgradeFacility(run,read,'a','academy',0),/Saldo/);db.close();
+});
+test('a sede acompanha apenas investimentos reais no centro de treinamento',()=>{
+ const {db,run,read,all}=setup();initializeFinance(run,read,all,'a');
+ const current=()=>headquartersStage(Number(read("SELECT level FROM web_facilities WHERE kind='training'")?.level??0)).image;
+ assert.equal(current(),'office');
+ upgradeFacility(run,read,'a','academy',0);
+ assert.equal(current(),'office');
+ for(const [level,image] of ['studio','house','campus'].entries()){
+   upgradeFacility(run,read,'a','training',level);
+   assert.equal(current(),image);
+ }
+ assert.equal(Number(read("SELECT -SUM(amount) AS invested FROM web_cash_events WHERE category='facility'")?.invested),22500000);
+ db.close();
 });
 test('salários registram apenas valores pagos e receita do mesmo avanço pode quitar folha',()=>{
  const {db,run,read,all}=setup();initializeFinance(run,read,all,'a');hire(run,read,'a',player);

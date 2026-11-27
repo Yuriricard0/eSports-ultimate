@@ -5,6 +5,7 @@ import {facilityDefinitions,sponsorSpecialty,type CashCategory,type FacilityKind
 import {formatCareerDay} from '../game-core/calendar';
 import {acceptSponsorship,assignEquipment,buyEquipment,improveFacility,listFinances,rejectSponsorship,type FinanceState} from '../persistence/repository';
 import {EquipmentShop} from './EquipmentShop';
+import {Headquarters} from './Headquarters';
 import {equipmentCatalog,sponsorKit,sponsorKitCount,sponsorCashOnlyValue} from '../game-core/equipment';
 import {money} from './Players';
 import {expansionStudy,payrollHealth,type FinanceProjection} from '../game-core/finance-projection';
@@ -81,6 +82,7 @@ export function Finances({career,players,onUpdated,onCalendar}:{career:Career;pl
        <p>Folha contratada: <strong>{money(data.payroll)} a cada 30 dias</strong>. Inclui o elenco principal e a Academy.</p>
        {data.outstanding>0&&<p role="alert">Salários em atraso: {money(data.outstanding)}. Contratações permanecem bloqueadas até regularizar a folha.</p>}
        <button onClick={onCalendar}>Consultar pagamentos de salários →</button>
+       <a className="headquarters-link" href="#sede">Visitar sede →</a>
      </section>
      {data.projection&&<Projection data={data.projection}/>}
      {health&&<section className="panel"><h2>Sustentabilidade da folha</h2>
@@ -123,10 +125,12 @@ export function Finances({career,players,onUpdated,onCalendar}:{career:Career;pl
            void perform(async()=>{await onUpdated(await buyEquipment(career.id,sku,1));},'Equipamento adicionado ao inventário.');
        }}
        assign={(player,category,sku)=>void perform(async()=>{await assignEquipment(career.id,player,category,sku);},'Setup atualizado.')}/>
-     <section className="panel"><h2>Instalações</h2><p>Melhorias permanentes na carreira. Os bônus atuam nos ciclos de treinamento e não geram evolução imediata.</p>
+     <Headquarters career={career} data={data}>
        <div className="finance-cards">{(Object.keys(facilityDefinitions) as FacilityKind[]).map(kind=>{
          const definition=facilityDefinitions[kind],level=data.facilities.find(f=>f.kind===kind)?.level??0,cost=definition.costs[level];
+         const last=data.facilities.find(row=>row.kind===kind)?.upgraded_day;
          return <article key={kind}><h3>{definition.name}</h3><p><strong>Nível {level}/3</strong></p><p>{definition.description}</p>
+           {last&&<p>Último investimento · {formatCareerDay(last)}</p>}
            {level<3?<><p>Próximo nível: {money(cost)}</p><button disabled={busy||data.balance<cost} onClick={()=>{
              if(!window.confirm(`Melhorar ${definition.name} para o nível ${level+1} por ${money(cost)}? O valor será debitado do caixa.`))return;
              void perform(async()=>{
@@ -135,7 +139,7 @@ export function Finances({career,players,onUpdated,onCalendar}:{career:Career;pl
            }}>Melhorar para nível {level+1}</button>{data.balance<cost&&<p className="muted">Saldo insuficiente.</p>}</>:<p>Nível máximo atingido.</p>}
          </article>;
        })}</div>
-     </section>
+     </Headquarters>
      <section className="panel player-table"><h2>Histórico de movimentações</h2>
        <p className="muted">Valores efetivamente recebidos ou pagos. Salários antigos recuperados usam o vencimento como referência.</p>
        {!data.transactions.length&&<p>Nenhuma movimentação neste período.</p>}

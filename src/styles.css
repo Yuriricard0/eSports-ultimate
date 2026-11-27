@@ -365,6 +365,22 @@ html[data-contrast=high]{--muted:#c8d1e4}html[data-contrast=high] button:not(:di
 .setup-slots{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(170px,100%),1fr));gap:8px}
 .setup-slots label{display:grid;gap:7px;padding:11px;background:#182536;border:1px solid #334a61;border-radius:7px}
 .setup-slots small{color:#c1d3e4}
+.headquarters-scene{position:relative;min-height:210px;aspect-ratio:2.15;border:1px solid #50534b;border-radius:12px;overflow:hidden;background:#191a18}
+.headquarters-scene img{width:100%;height:100%;display:block;object-fit:cover;object-position:center 50%}
+.headquarters-scene::after{content:'';position:absolute;inset:15% 0 0;background:linear-gradient(0deg,#141514f5,#14151418 78%,transparent)}
+.headquarters-scene>div{position:absolute;bottom:clamp(12px,3vw,28px);left:clamp(12px,3vw,35px);z-index:1}
+.headquarters-scene h3{margin:2px 0;font-size:clamp(24px,4.2vw,46px);line-height:1.05;color:#fff}
+.headquarters-scene p,.headquarters-scene span{margin:4px 0 0;color:#ede3d3}
+.headquarters-stages{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));list-style:none;padding:0;gap:6px;margin:12px 0}
+.headquarters-stages li{padding:8px 10px;border-top:3px solid #46484b;background:#1c2023;color:#acafb4;font-size:13px}
+.headquarters-stages li[aria-current]{border-top-color:#bcd7c5;color:#e5f4e8;background:#293b36;font-weight:700}
+.headquarters-stages .complete{border-top-color:#6e8f7e;color:#cbd9d0}
+.headquarters-summary{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:15px 0}
+.headquarters-summary>div{padding:11px 15px;border:1px solid #373d3d;border-radius:8px;background:#1d2324}
+.headquarters-summary h3{margin:.25em 0}.headquarters-summary ul{padding-left:19px}
+.headquarters-link{display:inline-block;margin:8px 0 8px 12px;color:#bcd7c5}
+.headquarters{scroll-margin-top:16px}
+@media(max-width:620px){.headquarters-stages{grid-template-columns:repeat(2,minmax(0,1fr))}.headquarters-summary{grid-template-columns:1fr}}
 @media(max-width:640px){.setup-board{grid-template-columns:1fr}.equipment-heading{padding:12px;flex-wrap:wrap}}
 @media(max-width:550px){.trophy-gallery .trophy-spotlight{grid-template-columns:1fr}.trophy-spotlight .trophy-card-stage .trophy-art{max-height:280px}}
 .trophy-art{display:block;width:100%;height:auto;border-radius:8px;overflow:hidden}

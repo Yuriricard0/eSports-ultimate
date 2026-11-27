@@ -631,6 +631,7 @@ async function handleRequest(event:MessageEvent){
    sponsors,equipment:all('SELECT sku,quantity FROM web_equipment_stock WHERE career_id=? ORDER BY sku',[current.id]),
    equipmentPlayers:[...equipmentPlayers],setups:all('SELECT player_id,category,sku,unit FROM web_equipment_setup WHERE career_id=?',[current.id]).filter(row=>equipmentPlayers.has(Number(row.player_id))),
    facilities:all('SELECT kind,level,upgraded_day FROM web_facilities WHERE career_id=?',[current.id]),
+   facilityInvestment:Number(read("SELECT COALESCE(-SUM(amount),0) total FROM web_cash_events WHERE career_id=? AND category='facility'",[current.id])?.total??0),
    transactions:all('SELECT event_key,day,category,amount,description FROM web_cash_events WHERE career_id=? AND day BETWEEN ? AND ? ORDER BY day DESC,rowid DESC LIMIT 200',[current.id,periodStart,periodEnd])};
  }else if(action==='sponsor-accept'){
  acceptSponsor(run,read,input.careerId,input.id,get(input.careerId)?.reputation??40);result=get(input.careerId);
