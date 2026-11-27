@@ -3,7 +3,8 @@ import type {Career} from '../game-core/career';
 import type {Player} from '../game-core/recruitment';
 import {facilityDefinitions,sponsorSpecialty,type CashCategory,type FacilityKind} from '../game-core/finance';
 import {formatCareerDay} from '../game-core/calendar';
-import {acceptSponsorship,buyEquipment,improveFacility,listFinances,rejectSponsorship,type FinanceState} from '../persistence/repository';
+import {acceptSponsorship,assignEquipment,buyEquipment,improveFacility,listFinances,rejectSponsorship,type FinanceState} from '../persistence/repository';
+import {EquipmentShop} from './EquipmentShop';
 import {equipmentCatalog,sponsorKit,sponsorKitCount,sponsorCashOnlyValue} from '../game-core/equipment';
 import {money} from './Players';
 import {expansionStudy,payrollHealth,type FinanceProjection} from '../game-core/finance-projection';
@@ -115,19 +116,13 @@ export function Finances({career,players,onUpdated,onCalendar}:{career:Career;pl
        </article>)}</div>
        {!!history.length&&<details><summary>Histórico de propostas e contratos</summary><ul>{history.map(s=><li key={s.id}>{s.company} · {s.state==='accepted'?'Encerrado':s.state==='rejected'?'Recusada':'Expirada'} · {sponsorValue(s)} · {s.duration} dias</li>)}</ul></details>}
      </section>
-     <section className="panel"><h2>Loja e inventário</h2>
-       <p>Os melhores kits disponíveis cobrem primeiro o elenco principal. O efeito depende de quantos atletas têm acesso ao equipamento e atua na eficiência dos treinos.</p>
-       <div className="finance-cards">{equipmentCatalog.filter(item=>item.mode===career.mode).map(item=>{
-         const quantity=data.equipment?.find(row=>row.sku===item.id)?.quantity??0;
-         return <article key={item.id}><h3>{item.name} · {item.label}</h3><p>{item.description}</p>
-           <p>{quantity} no inventário · {item.training?(item.training*100).toLocaleString('pt-BR')+'% por atleta coberto':'Treino padrão'}</p>
-           {item.price?<button disabled={busy||data.balance<item.price||quantity>=10} onClick={()=>{
-             if(window.confirm(`Comprar um kit ${item.label} por ${money(item.price)}?`))
-               void perform(async()=>{await onUpdated(await buyEquipment(career.id,item.id,1));},'Equipamento adicionado ao inventário.');
-           }}>Comprar · {money(item.price)}</button>:<p>Disponível por patrocínio.</p>}
-         </article>;
-       })}</div>
-     </section>
+     <EquipmentShop data={data} career={career} players={players} busy={busy}
+       buy={sku=>{
+         const product=equipmentCatalog.find(item=>item.id===sku);
+         if(product&&window.confirm(`Comprar ${product.name} por ${money(product.price)}?`))
+           void perform(async()=>{await onUpdated(await buyEquipment(career.id,sku,1));},'Equipamento adicionado ao inventário.');
+       }}
+       assign={(player,category,sku)=>void perform(async()=>{await assignEquipment(career.id,player,category,sku);},'Setup atualizado.')}/>
      <section className="panel"><h2>Instalações</h2><p>Melhorias permanentes na carreira. Os bônus atuam nos ciclos de treinamento e não geram evolução imediata.</p>
        <div className="finance-cards">{(Object.keys(facilityDefinitions) as FacilityKind[]).map(kind=>{
          const definition=facilityDefinitions[kind],level=data.facilities.find(f=>f.kind===kind)?.level??0,cost=definition.costs[level];

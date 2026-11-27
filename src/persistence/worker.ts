@@ -15,7 +15,7 @@ import {contractFixtures,contractParticipation,expectationDelta,expiryLevel,rene
 import {advanceCareerDay,calendarVersion,migrateCalendar,salaryDue} from '../game-core/calendar';
 import {cashProjection,paymentPeriods,type ScheduledCash} from '../game-core/finance-projection';
 import {countryRegions} from '../game-core/countries';
-import {equipmentCatalog,equipmentTraining,sponsorCashOnlyValue,type EquipmentStock} from '../game-core/equipment';
+import {equipmentCatalog,equipmentCategories,setupTraining,sponsorCashOnlyValue,type EquipmentAssignment} from '../game-core/equipment';
 import {defaultIdentity,phaseOneSchema,validateIdentity} from '../game-core/identity';
 import {assertBackupFile,readGodotCareer,readGodotRoster,restoreWebBackup} from '../game-core/backup';
 import type {Mode} from '../game-core/attributes';
@@ -609,6 +609,7 @@ async function handleRequest(event:MessageEvent){
    COALESCE(SUM(CASE WHEN amount<0 THEN -amount ELSE 0 END),0) expenses FROM web_cash_events WHERE career_id=? AND day BETWEEN ? AND ?`,[current.id,periodStart,periodEnd])!;
  const sponsors=all('SELECT * FROM web_sponsors WHERE career_id=? ORDER BY offered_day DESC,id',[current.id]);
  const outstanding=Number(read('SELECT COALESCE(SUM(amount-paid),0) total FROM web_payroll WHERE career_id=?',[current.id])?.total??0);
+ const equipmentPlayers=ownedIds(current.id);
  const horizon=current.day+360;
  const schedule:ScheduledCash[]=sponsors.filter(row=>row.state==='accepted'&&sponsorCashOnlyValue(String(row.id),Number(row.payment))>0).flatMap(row=>paymentPeriods(
    Number(row.accepted_day),Number(row.accepted_day)+Number(row.duration)-1,current.day,horizon
@@ -628,12 +629,39 @@ async function handleRequest(event:MessageEvent){
    openingBalance:Number(read('SELECT opening_balance FROM web_finance_state WHERE career_id=?',[current.id])?.opening_balance),
    ledgerTotal:Number(read('SELECT COALESCE(SUM(amount),0) total FROM web_cash_events WHERE career_id=?',[current.id])?.total??0),
    sponsors,equipment:all('SELECT sku,quantity FROM web_equipment_stock WHERE career_id=? ORDER BY sku',[current.id]),
+   equipmentPlayers:[...equipmentPlayers],setups:all('SELECT player_id,category,sku,unit FROM web_equipment_setup WHERE career_id=?',[current.id]).filter(row=>equipmentPlayers.has(Number(row.player_id))),
    facilities:all('SELECT kind,level,upgraded_day FROM web_facilities WHERE career_id=?',[current.id]),
    transactions:all('SELECT event_key,day,category,amount,description FROM web_cash_events WHERE career_id=? AND day BETWEEN ? AND ? ORDER BY day DESC,rowid DESC LIMIT 200',[current.id,periodStart,periodEnd])};
  }else if(action==='sponsor-accept'){
  acceptSponsor(run,read,input.careerId,input.id,get(input.careerId)?.reputation??40);result=get(input.careerId);
  }else if(action==='sponsor-reject'){
  rejectSponsor(run,read,input.careerId,input.id);result=true;
+ }else if(action==='equipment-assign'){
+ const current=get(input.careerId);
+ if(!current||!Object.hasOwn(equipmentCategories,input.category)||!Number.isSafeInteger(input.playerId)||typeof input.sku!=='string')
+   throw Error('Atribuição de equipamento inválida.');
+ const athlete=(await marketPlayers(current.id)).find(player=>player.id===input.playerId);
+ if(!athlete||athlete.status||!ownedIds(current.id).has(athlete.id))throw Error('Atleta indisponível no elenco.');
+ db.transaction(()=>{
+   const owned=ownedIds(current.id);
+   if(!owned.has(athlete.id))throw Error('Atleta indisponível no elenco.');
+   const assignments=all('SELECT player_id,category,sku,unit FROM web_equipment_setup WHERE career_id=?',[current.id]);
+   for(const row of assignments)if(!owned.has(Number(row.player_id)))
+     run('DELETE FROM web_equipment_setup WHERE career_id=? AND player_id=? AND category=?',[current.id,Number(row.player_id),String(row.category)]);
+   const key=[current.id,athlete.id,input.category] as [string,number,string];
+   if(!input.sku){
+     run('DELETE FROM web_equipment_setup WHERE career_id=? AND player_id=? AND category=?',key);
+     return;
+   }
+   const item=equipmentCatalog.find(row=>row.id===input.sku&&row.mode===athlete.mode&&row.slots.includes(input.category));
+   if(!item)throw Error('Este produto é incompatível com o atleta ou a categoria.');
+   const stock=Number(read('SELECT quantity FROM web_equipment_stock WHERE career_id=? AND sku=?',[current.id,item.id])?.quantity??0);
+   const reserved=new Set(assignments.filter(row=>row.sku===item.id&&row.category===input.category&&Number(row.player_id)!==athlete.id&&owned.has(Number(row.player_id))).map(row=>Number(row.unit)));
+   const unit=Array.from({length:stock},(_,index)=>index+1).find(number=>!reserved.has(number));
+   if(!unit)throw Error('Nenhuma unidade livre neste inventário.');
+   run('INSERT INTO web_equipment_setup VALUES(?,?,?,?,?) ON CONFLICT(career_id,player_id,category) DO UPDATE SET sku=excluded.sku,unit=excluded.unit',[...key,item.id,unit]);
+ });
+ result=get(current.id);
  }else if(action==='equipment-buy'){
  const current=get(input.careerId),item=equipmentCatalog.find(row=>row.id===input.sku);
  if(!current||!item||!item.price||item.mode!==current.mode||!Number.isInteger(input.quantity)||input.quantity<1||input.quantity>10||
@@ -795,9 +823,7 @@ async function handleRequest(event:MessageEvent){
    const facilityLevels=Object.fromEntries(all('SELECT kind,level FROM web_facilities WHERE career_id=?',[input.careerId]).map(row=>[String(row.kind),Number(row.level)])) as Partial<FacilityLevels>;
    const coach=!!read('SELECT 1 FROM web_youth_coach WHERE career_id=?',[input.careerId]);
    const academy=new Set([...training].filter(([,row])=>row.academy).map(([id])=>id));
-   const gear=all('SELECT sku,quantity FROM web_equipment_stock WHERE career_id=?',[input.careerId]) as unknown as EquipmentStock[];
-   const mainRoster=contractsFor(input.careerId).filter(row=>!row.academy).length;
-   const practiceBonus=equipmentTraining(advancingCareer.mode as Mode,gear,mainRoster);
+   const gear=all('SELECT player_id,category,sku,unit FROM web_equipment_setup WHERE career_id=?',[input.careerId]) as unknown as EquipmentAssignment[];
    const needsBaseline=new Set([...academy].filter(id=>!read('SELECT 1 FROM web_academy_snapshots WHERE career_id=? AND player_id=? LIMIT 1',[input.careerId,id])));
    recordAcademy(input.careerId,from,players,needsBaseline);
    const activeTryouts=all("SELECT player_id,start_day,end_day FROM web_tryouts WHERE career_id=? AND state='active'",[input.careerId]);
@@ -805,7 +831,7 @@ async function handleRequest(event:MessageEvent){
      AND NOT EXISTS(SELECT 1 FROM web_contracts c WHERE c.career_id=p.career_id AND c.player_id=p.player_id)`,[input.careerId]).map(row=>Number(row.player_id)));
    const plansFor=(id:number):TrainingPlan[]=>{
      const config=training.get(id),focus=config?.focus??'balanced';
-     const efficiency=Math.min(1.12,facilityEfficiency(facilityLevels,!!config?.academy)+(config?.academy?(coach?0.02:0):practiceBonus));
+     const efficiency=Math.min(1.12,facilityEfficiency(facilityLevels,!!config?.academy)+(coach&&config?.academy?0.02:0)+setupTraining(advancingCareer.mode as Mode,gear,id));
      return legacy.has(id)?[{focus,fromDay:config?.changed_day??1,toDay:to,efficiency}]:contracts.filter(c=>c.player_id===id)
        .map(c=>({focus,fromDay:Math.max(config?.changed_day??1,c.start_day),toDay:c.end_day,efficiency}));
    };

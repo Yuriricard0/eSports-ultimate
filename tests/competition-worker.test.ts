@@ -18,6 +18,7 @@ import {createDoubleElimination} from '../src/game-core/competition-formats.ts';
 import {restoreWebBackup} from '../src/game-core/backup.ts';
 import {startingEntry} from '../src/game-core/entry.ts';
 import {careerCreationVersion} from '../src/version.ts';
+import {equipmentCatalog} from '../src/game-core/equipment.ts';
 
 const catalog=JSON.parse(readFileSync('public/data/real_teams_2026.json','utf8'));
 for(const mode of ['MOBA','FPS'] as const)test('temporada completa '+mode+': agenda, séries, títulos, crédito único, recarga e ano seguinte',async()=>{
@@ -101,6 +102,22 @@ for(const mode of ['MOBA','FPS'] as const)test('temporada completa '+mode+': age
    const copiedFinance=await request('finance-state',{careerId:'copy'});assert.equal(copiedFinance.balance,finance.balance);assert.equal(copiedFinance.ledgerTotal,finance.ledgerTotal);
    assert.deepEqual(JSON.parse(JSON.stringify(await request('news',{careerId:'copy',filter:{category:'Campeonatos',pageSize:50}}))),JSON.parse(JSON.stringify(news)));
    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+   const sku=mode.toLowerCase()+'-mouse-3';
+   const order={careerId:'a',sku,quantity:1,orderId:'00000000-0000-0000-0000-000000000001'};
+   const beforeGear=Number(db.prepare("SELECT balance FROM careers WHERE id='a'").get()!.balance);
+   await request('equipment-buy',order);await request('equipment-buy',order);
+   assert.equal(Number(db.prepare("SELECT balance FROM careers WHERE id='a'").get()!.balance),beforeGear-equipmentCatalog.find(item=>item.id===sku)!.price);
+   assert.equal(db.prepare("SELECT quantity FROM web_equipment_stock WHERE career_id='a' AND sku=?").get(sku)!.quantity,1);
+   const assign=(playerId:number,product:string)=>request('equipment-assign',{careerId:'a',playerId,category:'mouse',sku:product});
+   await assign(own[0].id,sku);
+   await assert.rejects(()=>assign(own[1].id,sku),/Nenhuma unidade/);
+   await assign(own[0].id,'');
+   await assign(own[1].id,sku);
+   db.close();db=new DatabaseSync(path);request=workerHarness(db,catalog);
+   assert.equal((await request('finance-state',{careerId:'a'})).setups[0].player_id,own[1].id);
+   let equipmentBackup=0;
+   restoreWebBackup((sql,bind=[])=>db.prepare(sql).all(...bind),(sql,bind=[])=>{db.prepare(sql).run(...bind);},()=>'gear-copy-'+(++equipmentBackup));
+   assert.equal(db.prepare('SELECT COUNT(*) n FROM web_equipment_setup WHERE player_id=? AND sku=?').get(own[1].id,sku)!.n,2);
    if(mode==='MOBA'){
      const current=(await request('list')).find(row=>row.id==='a');
      const newSeason=generateSeason({...current,createdVersion:careerCreationVersion,entry:startingEntry(catalog,'BR',mode)},
