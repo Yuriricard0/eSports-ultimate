@@ -4,7 +4,8 @@ import type {Contract,Player} from './recruitment.ts';
 import type {WorldCatalog} from './world.ts';
 import type {Mode} from './attributes.ts';
 import {countryRegions} from './countries.ts';
-import {careerLineup,rivalLineup,matchStrength,simulateMatch,applyMatchConditions,type MatchSide,type MatchTeam,type MatchResult} from './matches.ts';
+import {careerLineup,rivalLineup,matchStrength,simulateMatch,applyMatchConditions,type MatchSide,type MatchTeam,type MatchResult,type MatchOptions} from './matches.ts';
+import {seriesMaps} from './match-tactics.ts';
 import {defaultIdentity} from './identity.ts';
 import {eligibleMobaLineup,leagueMobaRegion,mobaImports,mobaRegion,regionalPolicies,type MobaRegion} from './moba-eligibility.ts';
 
@@ -190,11 +191,12 @@ export function progressBracket(edition:Competition){
  }
 }
 
-export function simulateSeries(teams:[MatchSide,MatchSide],mode:Mode,day:number,bestOf:1|3|5,seed:number):SeriesResult{
+export function simulateSeries(teams:[MatchSide,MatchSide],mode:Mode,day:number,bestOf:1|3|5,seed:number,options:MatchOptions={}):SeriesResult{
  if(![1,3,5].includes(bestOf))throw Error('Formato de série inválido.');
  let current=teams;const score:[number,number]=[0,0],maps:MatchResult[]=[];
  while(Math.max(...score)<Math.ceil(bestOf/2)){
-   const result=simulateMatch(mode,day,current,hashSeed(seed+':'+maps.length));maps.push(result);score[result.winner]++;
+   const mapId=mode==='FPS'?seriesMaps(seed)[maps.length]?.id:undefined;
+   const result=simulateMatch(mode,day,current,hashSeed(seed+':'+maps.length),{...options,mapId});maps.push(result);score[result.winner]++;
    const updated=new Map(applyMatchConditions(current.flatMap(team=>team.lineup.map(s=>s.player)),result,false).map(player=>[player.id,player]));
    current=current.map(team=>({...team,lineup:team.lineup.map(slot=>({...slot,player:updated.get(slot.player.id)!}))})) as [MatchSide,MatchSide];
  }
@@ -222,7 +224,7 @@ export function planCompetitionAdvance(season:Season|undefined,day:number,reques
  return {days,stoppedAt:next&&days<requested?next:undefined};
 }
 
-export function playCompetitionFixture(season:Season,fixtureId:string,day:number,teams:[MatchSide,MatchSide],seed:number){
+export function playCompetitionFixture(season:Season,fixtureId:string,day:number,teams:[MatchSide,MatchSide],seed:number,options:MatchOptions={}){
  const edition=season.editions.find(e=>e.fixtures.some(g=>g.id===fixtureId)),game=edition?.fixtures.find(g=>g.id===fixtureId);
  if(!edition||!game)throw Error('Confronto não encontrado.');
  if(game.result||game.status==='completed')throw Error('Este confronto já foi concluído.');
@@ -240,6 +242,6 @@ export function playCompetitionFixture(season:Season,fixtureId:string,day:number
    const score:[number,number]=[0,0];
    score[winner]=Math.floor(game.bestOf/2)+1;
    result={winner:teams[winner].id,score,maps:[],completedDay:day,administrative:'ineligible-lineup'};
- }else result=simulateSeries(teams,edition.mode,day,game.bestOf,hashSeed(seed+':'+game.id));
+ }else result=simulateSeries(teams,edition.mode,day,game.bestOf,hashSeed(seed+':'+game.id),options);
  game.result=result;game.status='completed';progressBracket(edition);return result;
 }

@@ -16,6 +16,8 @@ import {Emblem} from './IdentityEditor';
 import {PlayerPortrait} from './PlayerPortrait';
 import {roleNames} from './Players';
 import {listCompetitions,playCompetitiveFixture,type CompetitionState} from '../persistence/repository';
+import {tacticalMaps,type Strategy} from '../game-core/match-tactics';
+import {MatchDebrief,MatchPreparation,RoleEvidence,TacticalBoard} from './MatchTactical';
 
 function TeamBadge({team}:{team:MatchTeam}){
  return <div className="match-team-badge">{team.identity?<Emblem identity={team.identity} code={team.code}/>:
@@ -40,6 +42,7 @@ function FriendlyMatches({career,players,contracts,catalog,onUpdated,onRoster}:{
  const [rows,setRows]=useState<StoredMatch[]>([]),[loaded,setLoaded]=useState(false);
  const [busy,setBusy]=useState(false),[error,setError]=useState('');
  const [search,setSearch]=useState(''),[opponentId,setOpponent]=useState(''),[viewId,setViewId]=useState('');
+ const [strategy,setStrategy]=useState<Strategy>('balanced'),[mapId,setMapId]=useState('');
  useEffect(()=>{
    let active=true;
    listMatches(career.id).then(entries=>{if(active){setRows(entries);setLoaded(true);}}).catch(reason=>{if(active)setError(String(reason));});
@@ -92,9 +95,11 @@ function FriendlyMatches({career,players,contracts,catalog,onUpdated,onRoster}:{
        {lineup.map(slot=><div className="match-lineup-player" key={slot.player.id}><PlayerPortrait index={slot.player.portraitIndex}/><span>{slot.player.nickname}<small>{roleNames[slot.role]} · OVR {Math.round(slot.player.overall)}</small></span></div>)}
      </div>)}</div>
      {pending&&<>
+       <MatchPreparation mode={mode} opponent={pending.opponent_team_id} lineup={away} matches={rows.flatMap(row=>row.result?[row.result]:[])}
+         strategy={strategy} onStrategy={setStrategy} mapId={mapId} onMap={setMapId}/>
        <p>Amistoso no dia atual · {mode==='FPS'?'13 rounds para vencer; em 12–12, prorrogação até 16.':'Simulação simplificada de uma partida MOBA.'}</p>
        <button className="primary" disabled={busy||!validHome||away.length!==5} onClick={()=>void perform(async()=>{
-         const completed=await playMatch(career.id,pending.id);setViewId(pending.id);await onUpdated(completed.career);
+         const completed=await playMatch(career.id,pending.id,strategy,mapId||undefined);setViewId(pending.id);await onUpdated(completed.career);
        })}>{busy?'Simulando…':'Simular Partida'}</button>
        <button disabled={busy} onClick={()=>void perform(async()=>{await cancelMatch(career.id,pending.id);setViewId('');})}>Cancelar amistoso</button>
        {!validHome&&<p role="alert">A escalação mudou. Complete os cinco titulares no elenco antes de simular.</p>}
@@ -117,6 +122,7 @@ function CompetitiveMatch({career,players,contracts,fixtureId,onUpdated,onCompet
  career:Career;players:Player[];contracts:Contract[];fixtureId:string;onUpdated:(career:Career)=>Promise<void>;onCompetitions:()=>void;onRoster:()=>void;
 }){
  const [state,setState]=useState<CompetitionState|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[mapIndex,setMap]=useState(0);
+ const [strategy,setStrategy]=useState<Strategy>('balanced');
  useEffect(()=>{let active=true;listCompetitions(career.id).then(data=>{if(active)setState(data);}).catch(reason=>{if(active)setError(String(reason));});return()=>{active=false;};},[career,fixtureId]);
  const edition=state?.seasons.flatMap(s=>s.editions).find(e=>e.fixtures.some(g=>g.id===fixtureId));
  const game=edition?.fixtures.find(g=>g.id===fixtureId);
@@ -128,6 +134,7 @@ function CompetitiveMatch({career,players,contracts,fixtureId,onUpdated,onCompet
  const valid=lineups.length===2&&lineups.every((lineup,index)=>teams[index].id!=='career'&&region||
    (lineup.length===5&&(!region||mobaImports(lineup,region)<=regionalPolicies[region].limit)));
  const own=game&&(game.home==='career'||game.away==='career');
+ const opponent=teams.findIndex(team=>team.id!=='career');
  return <>
    <div className="players-heading"><h1>Confronto de campeonato</h1><button onClick={onCompetitions}>← Competições</button></div>
    {error&&<p role="alert">{error}</p>}{!state&&!error&&<p role="status">Carregando confronto…</p>}
@@ -138,18 +145,21 @@ function CompetitiveMatch({career,players,contracts,fixtureId,onUpdated,onCompet
      <div className="match-scoreboard"><TeamBadge team={teams[0]}/><strong>{game.result?game.result.score.join(' × '):'×'}</strong><TeamBadge team={teams[1]}/></div>
      {game.result?<>
        <p><strong>{teams.find(team=>team.id===game.result!.winner)?.name} venceu a série.</strong> {game.result.administrative?'Resultado administrativo por falta de escalação elegível.':game.result.maps.length+' '+(edition.mode==='FPS'?'mapas':'jogos')+' disputados.'}</p>
-       <div className="advance-actions">{game.result.maps.map((map,index)=><button aria-pressed={mapIndex===index} key={index} onClick={()=>setMap(index)}>{edition.mode==='FPS'?'Mapa':'Jogo'} {index+1} · {map.score.join(' × ')}</button>)}</div>
+       <div className="advance-actions">{game.result.maps.map((map,index)=><button aria-pressed={mapIndex===index} key={index} onClick={()=>setMap(index)}>{tacticalMaps.find(item=>item.id===map.mapId)?.name??((edition.mode==='FPS'?'Mapa':'Jogo')+' '+(index+1))} · {map.score.join(' × ')}</button>)}</div>
      </>:!isScheduledFixture(game)?<p>Confronto indisponível para disputa.</p>:<>
        <div className="match-lineups">{lineups.map((lineup,index)=><div key={index}><h3>{teams[index].name}</h3>{lineup.map(slot=><div className="match-lineup-player" key={slot.player.id}><PlayerPortrait index={slot.player.portraitIndex}/><span>{slot.player.nickname}<small>{roleNames[slot.role]} · OVR {Math.round(slot.player.overall)}</small></span></div>)}</div>)}</div>
        {career.day<game.day&&<p>Avance o calendário até {formatCareerDay(game.day)} para disputar esta série.</p>}
        {!valid&&<p role="alert">Complete as cinco funções titulares do elenco principal. <button onClick={onRoster}>Abrir elenco →</button></p>}
+       {own&&opponent>=0&&<MatchPreparation mode={fixtureMode} opponent={teams[opponent].id} lineup={lineups[opponent]}
+         matches={state?.seasons.flatMap(season=>season.editions.filter(row=>row.mode===fixtureMode).flatMap(row=>row.fixtures.flatMap(fixture=>fixture.result?.maps??[])))??[]}
+         strategy={strategy} onStrategy={setStrategy}/>}
        {own?<button className="primary" disabled={busy||career.day<game.day||!valid} onClick={async()=>{
-         setBusy(true);setError('');try{const completed=await playCompetitiveFixture(career.id,fixtureId);await onUpdated(completed.career);setState(await listCompetitions(career.id));setMap(0);}
+         setBusy(true);setError('');try{const completed=await playCompetitiveFixture(career.id,fixtureId,strategy);await onUpdated(completed.career);setState(await listCompetitions(career.id));setMap(0);}
          catch(reason){setError(reason instanceof Error?reason.message:String(reason));}finally{setBusy(false);}
        }}>{busy?'Simulando série…':'Simular série MD'+game.bestOf}</button>:<p>Confronto da IA: simulação automática na data agendada.</p>}
      </>}
    </section>}
-   {game?.result?.maps[Math.min(mapIndex,game.result.maps.length-1)]&&<MatchResultView result={game.result.maps[Math.min(mapIndex,game.result.maps.length-1)]}/>}
+   {game?.result?.maps[Math.min(mapIndex,game.result.maps.length-1)]&&<MatchResultView key={mapIndex} result={game.result.maps[Math.min(mapIndex,game.result.maps.length-1)]}/>}
  </>;
 }
 
@@ -160,11 +170,21 @@ export function MatchResultView({result}:{result:MatchResult}){
    <div className="match-scoreboard"><TeamBadge team={result.teams[0]}/><strong>{result.score[0]} × {result.score[1]}</strong><TeamBadge team={result.teams[1]}/></div>
    <p role="status"><strong>{result.teams[result.winner].name} venceu.</strong> · Duração aproximada {result.durationMinutes.toLocaleString('pt-BR')} min · MVP {mvp.nickname}</p>
    {result.mode==='MOBA'&&<p>Abates das equipes: {result.kills[0]} × {result.kills[1]}</p>}
+   <TacticalBoard result={result}/>
+   <MatchDebrief result={result}/>
+   {!!result.phases?.length&&<div className="player-table"><table><thead><tr><th>Fase</th><th>Ouro registrado</th><th>Experiência</th><th>Visão</th><th>Objetivos</th><th>Pressão de mapa</th></tr></thead><tbody>
+     {result.phases.map(phase=><tr key={phase.phase}><th scope="row">{phase.phase}</th>{[phase.gold,phase.experience,phase.vision,phase.objectives,phase.pressure].map((value,index)=><td key={index}>{value.join(' × ')}</td>)}</tr>)}
+   </tbody></table></div>}
    <div className="match-statistics">{result.teams.map((team,index)=><div className="player-table" key={team.id}>
-     <h3>{team.name}</h3><table><thead><tr><th>Jogador</th><th>Abates</th><th>Mortes</th><th>Assist.</th>{result.mode==='FPS'&&<th>Rounds vencidos</th>}</tr></thead>
-       <tbody>{result.stats.filter(stat=>stat.team===index).map(stat=><tr key={stat.playerId}><th scope="row">{stat.nickname}{stat.playerId===result.mvp?' · MVP':''}<small>{roleNames[stat.role]}</small></th><td>{stat.kills}</td><td>{stat.deaths}</td><td>{stat.assists}</td>{result.mode==='FPS'&&<td>{stat.roundsWon}</td>}</tr>)}</tbody>
+     <h3>{team.name}</h3><table><thead><tr><th>Jogador</th><th>Abates</th><th>Mortes</th><th>Assist.</th>{result.mode==='FPS'&&<th>Rounds vencidos</th>}{result.strategies&&<><th>Ações da função</th><th>Nota</th></>}</tr></thead>
+       <tbody>{result.stats.filter(stat=>stat.team===index).map(stat=><tr key={stat.playerId}><th scope="row">{stat.nickname}{stat.playerId===result.mvp?' · MVP':''}<small>{roleNames[stat.role]}</small></th><td>{stat.kills}</td><td>{stat.deaths}</td><td>{stat.assists}</td>{result.mode==='FPS'&&<td>{stat.roundsWon}</td>}{result.strategies&&<><td>{stat.contribution}</td><td>{stat.rating?.toLocaleString('pt-BR')}</td></>}</tr>)}</tbody>
      </table>
    </div>)}</div>
+   <RoleEvidence result={result}/>
+   {result.strategies&&<details><summary>Comparar notas por função</summary><ul>{result.stats.filter(stat=>stat.team===0).map(home=>{
+     const away=result.stats.find(stat=>stat.team===1&&stat.role===home.role);
+     return <li key={home.playerId}>{roleNames[home.role]} · {home.nickname} ({home.rating?.toLocaleString('pt-BR')}) × {away?.nickname} ({away?.rating?.toLocaleString('pt-BR')})</li>;
+   })}</ul></details>}
    <h3>Acontecimentos principais</h3><ol className="career-timeline">{result.events.map((event,index)=><li key={index}>
      {result.mode==='FPS'?'Round '+event.at:event.at+' min'} · {event.text} <span className="muted">{event.score[0]}–{event.score[1]}{result.mode==='MOBA'?' abates':''}</span>
    </li>)}</ol>

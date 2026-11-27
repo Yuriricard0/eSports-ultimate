@@ -251,3 +251,16 @@ html[data-contrast=high]{--muted:#c8d1e4}html[data-contrast=high] button:not(:di
 .training-week summary{cursor:pointer;color:#ffd5e0}
 .training-editor{margin:10px 0}
 .training-load{border-left:3px solid #d99b51;padding:8px 12px;background:#211c17}
+.match-preparation,.match-debrief,.tactical-board{border:1px solid #35445a;border-radius:10px;padding:13px;margin:14px 0;background:#101823}
+.match-preparation summary,.tactical-board h3,.match-debrief h3{color:#f6dce5}
+.tactical-layout{display:grid;grid-template-columns:minmax(120px,1fr) minmax(0,3fr) minmax(120px,1fr);gap:10px}
+.tactical-layout canvas{grid-column:2;grid-row:1;width:100%;height:auto;background:#192433;border:1px solid #3a485d;border-radius:7px}
+.tactical-side{border:1px solid #3a5681;border-radius:8px;padding:8px;background:#121e31}
+.tactical-side.side-1{border-color:#884353;background:#2a1721;grid-column:3}
+.tactical-side>div{display:flex;align-items:center;gap:7px;border-top:1px solid #ffffff18;padding:6px 0}
+.tactical-side small{display:block;color:#becbda}
+.tactical-side .player-portrait{width:32px;height:32px;flex:none}
+.tactical-board input[type=range]{max-width:100%}
+.match-evidence{padding:10px 12px;margin:10px 0;border-left:3px solid #a53b5a;background:#192131}
+.match-evidence summary{cursor:pointer}.match-evidence details{margin:8px 0}
+@media(max-width:750px){.tactical-layout{grid-template-columns:1fr 1fr}.tactical-layout canvas{grid-column:1/-1}.tactical-side.side-1{grid-column:2}}

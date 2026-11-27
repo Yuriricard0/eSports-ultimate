@@ -1,4 +1,4 @@
-import {simulateMatch,type MatchResult,type MatchSide} from './matches.ts';
+import {simulateMatch,type MatchOptions,type MatchResult,type MatchSide} from './matches.ts';
 import type {Mode} from './attributes.ts';
 type Bind=(string|number)[];
 type Run=(sql:string,bind:Bind)=>void;
@@ -26,7 +26,7 @@ export function prepareMatch(run:Run,read:Read,careerId:string,id:string,opponen
  }catch(error){run('ROLLBACK',[]);throw error;}
 }
 
-export function completeMatch(run:Run,read:Read,careerId:string,id:string,teams:[MatchSide,MatchSide],onComplete:(result:MatchResult)=>void){
+export function completeMatch(run:Run,read:Read,careerId:string,id:string,teams:[MatchSide,MatchSide],onComplete:(result:MatchResult)=>void,options:MatchOptions={}){
  run('BEGIN IMMEDIATE',[]);
  try{
    const match=read('SELECT * FROM web_matches WHERE career_id=? AND id=?',[careerId,id]);
@@ -34,7 +34,7 @@ export function completeMatch(run:Run,read:Read,careerId:string,id:string,teams:
    if(!match||!career)throw Error('Partida não encontrada.');
    if(match.result!=='')throw Error('Esta partida já foi concluída.');
    if(match.mode!==career.mode||teams[0].id!=='career:'+careerId||teams[1].id!==match.opponent_team_id)throw Error('Equipes ou modalidade incompatíveis.');
-   const result=simulateMatch(career.mode as Mode,Number(career.day),teams,Number(match.seed));
+   const result=simulateMatch(career.mode as Mode,Number(career.day),teams,Number(match.seed),options);
    onComplete(result);
    run('UPDATE web_matches SET day=?,result=? WHERE career_id=? AND id=?',[result.day,JSON.stringify(result),careerId,id]);
    run('COMMIT',[]);

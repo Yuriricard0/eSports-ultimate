@@ -624,7 +624,7 @@ async function handleRequest(event:MessageEvent){
  db.transaction(()=>{
    players=maintainRosters(players,catalog,ownedIds(input.careerId),current.day,aiHiring(input.careerId,current.day));
    const teams=[game.home,game.away].map(id=>competitionSide(edition.participants.find(p=>p.id===id)!,players,edition.mode,current.day,input.careerId,undefined,edition.importRegion)) as [MatchSide,MatchSide];
-   const series=playCompetitionFixture(season,input.id,current.day,teams,seed);
+   const series=playCompetitionFixture(season,input.id,current.day,teams,seed,{strategy:input.strategy});
    for(const map of series.maps)players=applyMatchConditions(players,map);
    players=processAI(season,current.day,players,input.careerId,ownedIds(input.careerId),seed);
    writeMarketPlayers(input.careerId,players);
@@ -653,7 +653,7 @@ async function handleRequest(event:MessageEvent){
  if(!match)throw Error('Partida não encontrada.');
  if(match.result)throw Error('Esta partida já foi concluída.');
  const {sides,players}=await matchContext(input.careerId,String(match.opponent_team_id));
- const completed=completeMatch(run,read,input.careerId,input.id,sides,result=>writeMarketPlayers(input.careerId,applyMatchConditions(players,result)));
+ const completed=completeMatch(run,read,input.careerId,input.id,sides,result=>writeMarketPlayers(input.careerId,applyMatchConditions(players,result)),{strategy:input.strategy,mapId:input.mapId});
  result={career:get(input.careerId),result:completed};
  }else if(action==='timeline'||action==='player-milestones'){
  const personal=action==='player-milestones';
