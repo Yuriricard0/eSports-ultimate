@@ -54,6 +54,7 @@ const tables={
   web_finance_state:['career_id','opened_day','opening_balance'],
   web_sponsors:['career_id','id','company','payment','duration','min_reputation','offered_day','expires_day','state','accepted_day'],
   web_facilities:['career_id','kind','level','upgraded_day'],
+  web_equipment_stock:['career_id','sku','quantity'],
   web_ai_finances:['career_id','organization','balance','arrears','last_day','payroll'],
   web_ai_cash_events:['career_id','event_key','organization','day','amount','description'],
   web_news:['career_id','news_key','day','category','sequence','data'],

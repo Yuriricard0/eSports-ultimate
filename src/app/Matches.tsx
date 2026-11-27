@@ -1,4 +1,6 @@
-import {isScheduledFixture} from '../game-core/competitions';
+import {isScheduledFixture,type Season} from '../game-core/competitions';
+import {championshipFromResults} from '../game-core/competition-history';
+import {competitionLineup,registrationDeadline} from '../game-core/competition-registration';
 import {useEffect,useMemo,useState} from 'react';
 import type {Career} from '../game-core/career';
 import type {Contract,Player} from '../game-core/recruitment';
@@ -18,6 +20,7 @@ import {roleNames} from './Players';
 import {listCompetitions,playCompetitiveFixture,type CompetitionState} from '../persistence/repository';
 import {tacticalMaps,type Strategy} from '../game-core/match-tactics';
 import {MatchDebrief,MatchPreparation,RoleEvidence,TacticalBoard} from './MatchTactical';
+import {TitleCelebration} from './TrophyRoom';
 
 function TeamBadge({team}:{team:MatchTeam}){
  return <div className="match-team-badge">{team.identity?<Emblem identity={team.identity} code={team.code}/>:
@@ -123,20 +126,36 @@ function CompetitiveMatch({career,players,contracts,fixtureId,onUpdated,onCompet
 }){
  const [state,setState]=useState<CompetitionState|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[mapIndex,setMap]=useState(0);
  const [strategy,setStrategy]=useState<Strategy>('balanced');
+ const [confirmForfeit,setConfirmForfeit]=useState(false);
+ const [celebrated,setCelebrated]=useState<Season>();
  useEffect(()=>{let active=true;listCompetitions(career.id).then(data=>{if(active)setState(data);}).catch(reason=>{if(active)setError(String(reason));});return()=>{active=false;};},[career,fixtureId]);
  const edition=state?.seasons.flatMap(s=>s.editions).find(e=>e.fixtures.some(g=>g.id===fixtureId));
  const game=edition?.fixtures.find(g=>g.id===fixtureId);
  const teams=game&&edition?[game.home,game.away].flatMap(id=>edition.participants.filter(p=>p.id===id)):[];
  const fixtureMode=edition?.mode??career.mode as Mode;
  const region=edition?.importRegion;
- const lineups=teams.map(team=>team.id==='career'?careerLineup(players.filter(player=>player.mode===fixtureMode),contracts):
+ const registration=edition?competitionLineup(edition,players,contracts,career.day):undefined;
+ const lineups=teams.map(team=>team.id==='career'?(registration?.lineup??[]):
    region?registeredMobaLineup(players,team.id,career.day,region):rivalLineup(players,team.id,fixtureMode,career.day));
  const valid=lineups.length===2&&lineups.every((lineup,index)=>teams[index].id!=='career'&&region||
    (lineup.length===5&&(!region||mobaImports(lineup,region)<=regionalPolicies[region].limit)));
  const own=game&&(game.home==='career'||game.away==='career');
  const opponent=teams.findIndex(team=>team.id!=='career');
+ const submit=async(forfeit=false)=>{
+   setBusy(true);setError('');
+   try{
+     const completed=await playCompetitiveFixture(career.id,fixtureId,strategy,forfeit);
+     const winner=completed.season.editions.find(event=>event.id===edition?.id);
+     if(winner?.champion==='career'&&winner.key!==completed.season.pyramid?.playIn&&edition?.champion!=='career')setCelebrated(completed.season);
+     await onUpdated(completed.career);setState(await listCompetitions(career.id));setMap(0);
+   }
+   catch(reason){setError(reason instanceof Error?reason.message:String(reason));}finally{setBusy(false);}
+ };
+ const winningEdition=celebrated?.editions.find(event=>event.id===edition?.id);
+ const title=winningEdition&&(winningEdition.championship??championshipFromResults(winningEdition));
  return <>
    <div className="players-heading"><h1>Confronto de campeonato</h1><button onClick={onCompetitions}>← Competições</button></div>
+   {celebrated&&winningEdition&&title&&<TitleCelebration title={title} edition={winningEdition} season={celebrated} close={()=>setCelebrated(undefined)}/>}
    {error&&<p role="alert">{error}</p>}{!state&&!error&&<p role="status">Carregando confronto…</p>}
    {state&&!game&&<p>Confronto não encontrado.</p>}
    {game&&teams.length!==2&&<p role="alert">Confronto inválido: faltam participantes na edição.</p>}
@@ -149,14 +168,22 @@ function CompetitiveMatch({career,players,contracts,fixtureId,onUpdated,onCompet
      </>:!isScheduledFixture(game)?<p>Confronto indisponível para disputa.</p>:<>
        <div className="match-lineups">{lineups.map((lineup,index)=><div key={index}><h3>{teams[index].name}</h3>{lineup.map(slot=><div className="match-lineup-player" key={slot.player.id}><PlayerPortrait index={slot.player.portraitIndex}/><span>{slot.player.nickname}<small>{roleNames[slot.role]} · OVR {Math.round(slot.player.overall)}</small></span></div>)}</div>)}</div>
        {career.day<game.day&&<p>Avance o calendário até {formatCareerDay(game.day)} para disputar esta série.</p>}
+       {own&&registration&&state?.seasons.find(season=>season.number===edition.season)?.rosterRegistration&&<details open={!registration.valid}>
+         <summary>Inscrição de elenco · prazo {formatCareerDay(registrationDeadline(edition))}</summary>
+         <p>{edition.registration?'Lista fechada.':'Lista aberta até o prazo.'} Titulares atuais são mantidos. Trocas são feitas no elenco.</p>
+         <p>Reservas elegíveis · {registration.reserve.map(player=>player.nickname+' ('+roleNames[player.role]+')').join(', ')||'Nenhuma'}</p>
+         {!!registration.unavailable.length&&<ul>{registration.unavailable.map(({player,reason})=><li key={player.id}>{player.nickname} · {reason}</li>)}</ul>}
+         {!!registration.missingRoles.length&&<p>Funções sem titular elegível · {registration.missingRoles.map(role=>roleNames[role]).join(', ')}.</p>}
+         {registration.overImport&&<p>Limite de importados excedido.</p>}
+       </details>}
        {!valid&&<p role="alert">Complete as cinco funções titulares do elenco principal. <button onClick={onRoster}>Abrir elenco →</button></p>}
        {own&&opponent>=0&&<MatchPreparation mode={fixtureMode} opponent={teams[opponent].id} lineup={lineups[opponent]}
          matches={state?.seasons.flatMap(season=>season.editions.filter(row=>row.mode===fixtureMode).flatMap(row=>row.fixtures.flatMap(fixture=>fixture.result?.maps??[])))??[]}
          strategy={strategy} onStrategy={setStrategy}/>}
-       {own?<button className="primary" disabled={busy||career.day<game.day||!valid} onClick={async()=>{
-         setBusy(true);setError('');try{const completed=await playCompetitiveFixture(career.id,fixtureId,strategy);await onUpdated(completed.career);setState(await listCompetitions(career.id));setMap(0);}
-         catch(reason){setError(reason instanceof Error?reason.message:String(reason));}finally{setBusy(false);}
-       }}>{busy?'Simulando série…':'Simular série MD'+game.bestOf}</button>:<p>Confronto da IA: simulação automática na data agendada.</p>}
+       {own?<button className="primary" disabled={busy||career.day<game.day||!valid||!registration?.valid} onClick={()=>void submit()}>{busy?'Simulando série…':'Simular série MD'+game.bestOf}</button>:<p>Confronto da IA: simulação automática na data agendada.</p>}
+       {own&&edition.registration&&!registration?.valid&&career.day>=game.day&&
+         (confirmForfeit?<p>Esta série será registrada como derrota administrativa. <button disabled={busy} onClick={()=>void submit(true)}>Confirmar derrota</button> <button onClick={()=>setConfirmForfeit(false)}>Cancelar</button></p>:
+           <button disabled={busy} onClick={()=>setConfirmForfeit(true)}>Registrar derrota por falta de elenco</button>)}
      </>}
    </section>}
    {game?.result?.maps[Math.min(mapIndex,game.result.maps.length-1)]&&<MatchResultView key={mapIndex} result={game.result.maps[Math.min(mapIndex,game.result.maps.length-1)]}/>}

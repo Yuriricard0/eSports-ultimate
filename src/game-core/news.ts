@@ -2,7 +2,7 @@ import type {Career} from './career.ts';
 import type {Contract,Player} from './recruitment.ts';
 import type {WorldCatalog} from './world.ts';
 import type {Season} from './competitions.ts';
-import {hashSeed} from './competitions.ts';
+import {fixtureStageName,hashSeed} from './competitions.ts';
 import {athleteAge,playerCondition} from './development.ts';
 import {facilityDefinitions,type FacilityKind} from './finance.ts';
 
@@ -138,7 +138,7 @@ export function synchronizeNews(run:Run,read:Read,all:All,career:Career,players:
    for(const game of edition.fixtures){
      if(!game.result||(game.phase==='regular'&&game.home!=='career'&&game.away!=='career'))continue;
      const home=edition.participants.find(p=>p.id===game.home),away=edition.participants.find(p=>p.id===game.away),winner=edition.participants.find(p=>p.id===game.result!.winner);if(!home||!away||!winner)continue;
-     const loser=winner.id===home.id?away:home,phase={regular:'temporada regular',quarterfinal:'quartas de final',semifinal:'semifinal',final:'final'}[game.phase];
+     const loser=winner.id===home.id?away:home,phase=fixtureStageName(edition,game).toLowerCase();
      const upset=winner.reputation+15<loser.reputation;
      post({id:'series:'+game.id,day:game.result.completedDay,category:'Campeonatos',title:upset?winner.name+' surpreende '+loser.name+' em '+edition.name:[winner.name+' supera '+loser.name+' em '+edition.name,winner.name+' vence '+loser.name+' pela '+phase][hashSeed(game.id)%2],
        summary:home.name+' '+game.result.score[0]+' × '+game.result.score[1]+' '+away.name+' · MD'+game.bestOf+'.',
@@ -166,13 +166,13 @@ export function synchronizeNews(run:Run,read:Read,all:All,career:Career,players:
  for(const award of all('SELECT * FROM web_competition_awards WHERE career_id=? ORDER BY day,competition_id',[career.id])){
    const edition=seasons.flatMap(s=>s.editions).find(e=>e.id===award.competition_id),champion=edition?.participants.find(p=>p.id===award.team_id);
    const name=champion?.name??(award.organization==='career'?career.name:organizations.get(String(award.organization))??String(award.organization));
-   const key='champion:'+award.season+':'+award.competition_id,final=edition?.fixtures.find(g=>g.phase==='final'&&g.result);
+   const key='champion:'+award.season+':'+award.competition_id,final=edition?.fixtures.filter(g=>g.phase==='final'&&g.result).at(-1);
    const home=edition?.participants.find(p=>p.id===final?.home),away=edition?.participants.find(p=>p.id===final?.away);
    const finalText=final?.result&&home&&away?'\n\nNa decisão: '+home.name+' '+final.result.score[0]+' × '+final.result.score[1]+' '+away.name+'. Série melhor de '+final.bestOf+'.':'';
    post({id:key,day:Number(award.day),category:'Campeonatos',title:[name+' é campeão de '+award.name,name+' conquista o título de '+award.name,'A taça de '+award.name+' fica com '+name][hashSeed(key)%3],
      content:name+' conquista '+award.name+', competição de prestígio '+String(award.prestige).toLowerCase()+'.'+finalText,
      summary:name+' conquista '+award.name+' e leva o título '+String(award.prestige).toLowerCase()+'.',mode:String(award.mode),competitionId:String(award.competition_id),season:Number(award.season),relevance:100,
-     visual:{kind:'trophy',label:String(award.name),destination:name},organizationId:String(award.organization),fixtureId:edition?.fixtures.find(g=>g.phase==='final')?.id});
+     visual:{kind:'trophy',label:String(award.name),destination:name},organizationId:String(award.organization),fixtureId:final?.id});
  }
  for(const row of all("SELECT event_key,day,description FROM web_cash_events WHERE career_id=? AND category='facility' ORDER BY day,event_key",[career.id])){
    const [,kind,level]=String(row.event_key).split(':'),definition=facilityDefinitions[kind as FacilityKind];if(!definition)continue;

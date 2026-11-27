@@ -40,7 +40,7 @@ export async function initialize(){
  });
 }
 const saveActions=new Set(['delete','create','import','identity','rename','starter','prepare-match','play-match','cancel-match',
- 'start-season','competition-config','play-competition','sponsor-accept','sponsor-reject','facility-upgrade','assign-academy',
+ 'start-season','competition-config','enroll-competition','play-competition','sponsor-accept','sponsor-reject','facility-upgrade','equipment-buy','assign-academy',
  'set-training','submit-offer','confirm-offer','cancel-offer','renew-contract','decline-renewal','depart-player','advance',
  'lineup-favorite-create','lineup-favorite-rename','lineup-favorite-delete','lineup-favorite-apply','create-loan','start-tryout','dismiss-tryout','youth-coach',
  'training-model-save','training-model-rename','training-model-delete','training-week-apply','training-event-plan','training-event-complete','training-event-cancel']);
@@ -99,19 +99,21 @@ export const prepareFriendly=(careerId:string,opponentId:string)=>request<Stored
 export const playMatch=(careerId:string,id:string,strategy?:Strategy,mapId?:string)=>request<{career:Career;result:MatchResult}>('play-match',{careerId,id,strategy,mapId});
 export const cancelMatch=(careerId:string,id:string)=>request<boolean>('cancel-match',{careerId,id});
 export type CompetitionAward={season:number;competition_id:string;team_id:string;organization:string;day:number;name:string;mode:string;prestige:string;prize:number;reputation:number};
-export type CompetitionState={seasons:Season[];config:CompetitionConfig;awards:CompetitionAward[]};
+export type CompetitionState={seasons:Season[];config:CompetitionConfig;awards:CompetitionAward[];rankings?:import('../game-core/competition-rankings').CompetitionRankings};
 export const listCompetitions=(careerId:string)=>request<CompetitionState>('competition-state',careerId);
 export const startCompetitionSeason=(careerId:string)=>request<Season>('start-season',careerId);
+export const enrollCompetition=(careerId:string,id:string)=>request<Season>('enroll-competition',{careerId,id});
 export const saveCompetitionConfig=(careerId:string,config:CompetitionConfig)=>request<boolean>('competition-config',{careerId,config});
-export const playCompetitiveFixture=(careerId:string,id:string,strategy?:Strategy)=>request<{career:Career;season:Season}>('play-competition',{careerId,id,strategy});
+export const playCompetitiveFixture=(careerId:string,id:string,strategy?:Strategy,forfeit=false)=>request<{career:Career;season:Season}>('play-competition',{careerId,id,strategy,forfeit});
 export type Sponsor={id:string;company:string;payment:number;duration:number;min_reputation:number;offered_day:number;expires_day:number;state:'pending'|'accepted'|'rejected'|'expired';accepted_day:number};
-export type FinanceState={balance:number;reputation:number;periodStart:number;periodEnd:number;income:number;expenses:number;result:number;payroll:number;outstanding:number;openingBalance:number;ledgerTotal:number;
- seasons:{number:number;year:number;startDay:number}[];sponsors:Sponsor[];facilities:{kind:FacilityKind;level:number;upgraded_day:number}[];
+export type FinanceState={balance:number;reputation:number;recognition:number;periodStart:number;periodEnd:number;income:number;expenses:number;result:number;payroll:number;outstanding:number;openingBalance:number;ledgerTotal:number;projection:import('../game-core/finance-projection').FinanceProjection;
+ seasons:{number:number;year:number;startDay:number}[];sponsors:Sponsor[];facilities:{kind:FacilityKind;level:number;upgraded_day:number}[];equipment:import('../game-core/equipment').EquipmentStock[];
  transactions:{event_key:string;day:number;category:CashCategory;amount:number;description:string}[]};
 export const listFinances=(careerId:string,season=0)=>request<FinanceState>('finance-state',{careerId,season});
 export const acceptSponsorship=(careerId:string,id:string)=>request<Career>('sponsor-accept',{careerId,id});
 export const rejectSponsorship=(careerId:string,id:string)=>request<boolean>('sponsor-reject',{careerId,id});
 export const improveFacility=(careerId:string,kind:FacilityKind,expectedLevel:number)=>request<Career>('facility-upgrade',{careerId,kind,expectedLevel});
+export const buyEquipment=(careerId:string,sku:string,quantity:number)=>request<Career>('equipment-buy',{careerId,sku,quantity,orderId:crypto.randomUUID()});
 export const moveToAcademy=(careerId:string,playerId:number,academy:boolean)=>request<Career>('assign-academy',{careerId,playerId,academy});
 export const chooseTraining=(careerId:string,playerId:number,focus:TrainingFocus)=>request<Career>('set-training',{careerId,playerId,focus});
 export const listImportedPlayers=(id:string)=>request<Player[]>('imported-players',id);

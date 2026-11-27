@@ -4,7 +4,7 @@ import {formatCareerDay,type CalendarResult} from '../game-core/calendar';
 import type {Contract,Player} from '../game-core/recruitment';
 import type {StoredMatch} from '../game-core/match-store';
 import type {Season} from '../game-core/competitions';
-import {careerAgenda,type AgendaEvent} from '../game-core/career-agenda';
+import {careerAgenda,competitionCalendar,type AgendaEvent} from '../game-core/career-agenda';
 import {activityNames} from '../game-core/training-week';
 import {getTrainingAgenda,listPayroll,listMatches,listCompetitions,type PayrollEntry,type TrainingAgendaItem} from '../persistence/repository';
 import {money} from './Players';
@@ -21,6 +21,7 @@ export function CareerCalendar({career,players,contracts,advance,busy,report,onM
   const [scheduleError,setScheduleError]=useState('');
   const [mode,setMode]=useViewPreference(`${career.id}:calendar:mode`,'');
   const [onlyOwn,setOnlyOwn]=useViewPreference(`${career.id}:calendar:own`,true);
+  const [forecasts,setForecasts]=useViewPreference(`${career.id}:calendar:forecasts`,false);
   const [agendaPage,setAgendaPage]=useState(0);
   useEffect(()=>{
     let active=true;
@@ -38,8 +39,9 @@ export function CareerCalendar({career,players,contracts,advance,busy,report,onM
   const byId=new Map(players.map(player=>[player.id,player.nickname]));
   const trainingAgenda:AgendaEvent[]=(schedule?.training??[]).map(row=>({id:'training:'+row.mode+':'+row.day,day:row.day,mode:row.mode,
     label:activityNames[row.kind]+' · Planejado',own:true,target:'training'}));
-  const agenda=schedule?[...careerAgenda(career,schedule.seasons,schedule.matches,contracts,byId),...trainingAgenda]
-    .filter(event=>(!onlyOwn||event.own)&&(!mode||event.mode===mode)).sort((a,b)=>a.day-b.day||a.id.localeCompare(b.id)):[];
+  const agenda=schedule?[...careerAgenda(career,schedule.seasons,schedule.matches,contracts,byId),...trainingAgenda,...competitionCalendar(career,schedule.seasons[0])]
+    .filter(event=>(!onlyOwn||event.own)&&(!mode||event.mode===mode)&&
+      (forecasts||event.status!=='forecast'||!event.id.endsWith(':projected'))).sort((a,b)=>a.day-b.day||a.id.localeCompare(b.id)):[];
   const agendaIndex=Math.min(agendaPage,Math.max(0,Math.ceil(agenda.length/12)-1));
   const entries=rows??[];
   const outstanding=entries.reduce((total,row)=>total+row.amount-row.paid,0);
@@ -57,14 +59,16 @@ export function CareerCalendar({career,players,contracts,advance,busy,report,onM
       <div className="world-filters"><select aria-label="Modalidade da agenda" value={mode} onChange={event=>{setMode(event.target.value);setAgendaPage(0);}}>
         <option value="">Todas as modalidades</option><option value="MOBA">MOBA</option><option value="FPS">CS2</option>
       </select><label className="compare-choice"><input type="checkbox" checked={onlyOwn} onChange={event=>{setOnlyOwn(event.target.checked);setAgendaPage(0);}}/> Apenas minha organização</label></div>
+      <label className="compare-choice"><input type="checkbox" checked={forecasts} onChange={event=>{setForecasts(event.target.checked);setAgendaPage(0);}}/> Previsões dos torneios da próxima temporada</label>
       {scheduleError&&<p role="alert">{scheduleError}</p>}
       {!schedule&&!scheduleError&&<p role="status">Carregando agenda…</p>}
       {schedule&&!agenda.length&&<p>Nenhum compromisso para estes filtros.</p>}
-      {agenda.slice(agendaIndex*12,(agendaIndex+1)*12).map(event=><p key={event.id}>{formatCareerDay(event.day)} · {event.mode==='FPS'?'CS2':event.mode??'Organização'} · {event.label}{' '}
+      {agenda.slice(agendaIndex*12,(agendaIndex+1)*12).map(event=><p key={event.id}>{formatCareerDay(event.day)} · {event.mode==='FPS'?'CS2':event.mode??'Organização'} · {event.status==='forecast'?'Previsto':'Confirmado'} · {event.label}{' '}
         {event.target==='fixture'&&event.fixtureId&&<button onClick={()=>onOpenFixture(event.fixtureId!)}>Abrir confronto →</button>}
         {event.target==='matches'&&<button onClick={onMatches}>Ver amistoso →</button>}
         {event.target==='roster'&&<button onClick={onRoster}>Ver elenco →</button>}
         {event.target==='training'&&onTraining&&<button onClick={onTraining}>Abrir treinamento →</button>}
+        {event.target==='competitions'&&<button onClick={onCompetitions}>Ver competição →</button>}
       </p>)}
       {agenda.length>12&&<footer><button disabled={!agendaIndex} onClick={()=>setAgendaPage(agendaIndex-1)}>Anterior</button><button disabled={(agendaIndex+1)*12>=agenda.length} onClick={()=>setAgendaPage(agendaIndex+1)}>Próxima</button></footer>}
     </section>

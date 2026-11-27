@@ -1,9 +1,10 @@
+import {equipmentSchema,sponsorKit,sponsorKitCount,sponsorCashOnlyValue} from './equipment.ts';
 type Bind=(string|number)[];
 type Row=Record<string,unknown>;
 type Run=(sql:string,bind:Bind)=>void;
 type Read=(sql:string,bind:Bind)=>Row|undefined;
 type All=(sql:string,bind:Bind)=>Row[];
-export type CashCategory='signing'|'salary'|'sale'|'prize'|'sponsor'|'facility';
+export type CashCategory='signing'|'salary'|'sale'|'prize'|'sponsor'|'facility'|'equipment';
 export type FacilityKind='training'|'academy'|'scouting';
 export type FacilityLevels=Record<FacilityKind,number>;
 export const facilityDefinitions={
@@ -38,7 +39,7 @@ CREATE TABLE IF NOT EXISTS web_ai_cash_events (
  career_id TEXT NOT NULL REFERENCES careers(id) ON DELETE CASCADE,event_key TEXT NOT NULL,organization TEXT NOT NULL,day INTEGER NOT NULL,
  amount INTEGER NOT NULL,description TEXT NOT NULL,PRIMARY KEY(career_id,event_key)
 );
-`;
+`+equipmentSchema;
 
 // Receipt only: the existing source operation remains responsible for balance.
 export function recordCash(run:Run,careerId:string,key:string,day:number,category:CashCategory,amount:number,description:string){
@@ -78,13 +79,31 @@ const brands=[
  {key:'vertex',name:'Vértice Gear',minimum:50,base:1500000,rate:22000,duration:365},
  {key:'nova',name:'NovaLink',minimum:70,base:2000000,rate:30000,duration:365},
 ];
-export function refreshSponsorOffers(run:Run,read:Read,careerId:string,day:number,reputation:number){
+const specialistBrands=[
+ {key:'nexo',name:'Nexo Fibra',minimum:0,base:650000,rate:9000,duration:180,sector:'Internet regional',region:'América do Sul'},
+ {key:'maple',name:'Mapa Café',minimum:0,base:680000,rate:8500,duration:180,sector:'Alimentação regional',region:'América do Norte'},
+ {key:'orio',name:'Ório Mobilidade',minimum:0,base:690000,rate:8700,duration:180,sector:'Mobilidade regional',region:'Europa'},
+ {key:'pluma',name:'Pluma Studio',minimum:0,base:640000,rate:9200,duration:180,sector:'Design regional',region:'Ásia'},
+ {key:'lumera-hybrid',name:'Lumera Monitores',minimum:30,base:850000,rate:10000,duration:180,sector:'Monitores',mode:'FPS'},
+ {key:'riftline',name:'Riftline Telecom',minimum:30,base:880000,rate:9700,duration:180,sector:'Telecomunicações',mode:'MOBA'},
+ {key:'arcgear',name:'ArcForge Periféricos',minimum:25,base:1,rate:0,duration:180,sector:'Periféricos',mode:'FPS'},
+ {key:'loomgear',name:'Loom Input',minimum:25,base:1,rate:0,duration:180,sector:'Periféricos',mode:'MOBA'},
+ ];
+export function sponsorSpecialty(id:string){
+ const key=id.split(':').at(-1);
+ return specialistBrands.find(brand=>brand.key===key);
+}
+export function commercialRecognition(day:number,exposure:number,partners:number){
+ return Math.min(100,10+Math.min(30,Math.floor((day-1)/45))+Math.min(40,Math.floor(exposure/4))+Math.min(20,partners*2));
+}
+export function refreshSponsorOffers(run:Run,read:Read,careerId:string,day:number,reputation:number,mode?:string,region?:string,recognition=reputation){
  run("UPDATE web_sponsors SET state='expired' WHERE career_id=? AND state='pending' AND expires_day<?",[careerId,day]);
  const cycle=Math.floor((day-1)/30);
- for(const brand of brands){
+ for(const brand of [...brands,...specialistBrands.filter(brand=>(brand.mode&&brand.mode===mode)||(brand.region&&brand.region===region&&recognition<55))]){
+   if(brand.key==='nova'&&recognition<45)continue;
    if(reputation<brand.minimum||read("SELECT 1 FROM web_sponsors WHERE career_id=? AND company=? AND state='accepted' AND accepted_day+duration-1>=?",[careerId,brand.name,day]))continue;
    run("INSERT OR IGNORE INTO web_sponsors(career_id,id,company,payment,duration,min_reputation,offered_day,expires_day,state) VALUES(?,?,?,?,?,?,?,?,'pending')",
-     [careerId,'s'+cycle+':'+brand.key,brand.name,brand.base+Math.min(100,reputation)*brand.rate,brand.duration,brand.minimum,day,(cycle+1)*30]);
+     [careerId,'s'+cycle+':'+brand.key,brand.name,brand.base+Math.min(100,Math.round(reputation*.65+recognition*.35))*brand.rate,brand.duration,brand.minimum,day,(cycle+1)*30]);
  }
 }
 export function acceptSponsor(run:Run,read:Read,careerId:string,id:string,reputation:number){
@@ -97,6 +116,8 @@ export function acceptSponsor(run:Run,read:Read,careerId:string,id:string,reputa
    if(active>=2)throw Error('O limite é de dois patrocinadores ativos.');
    if(read("SELECT 1 FROM web_sponsors WHERE career_id=? AND company=? AND state='accepted' AND accepted_day+duration-1>=?",[careerId,String(offer.company),day]))throw Error('Esta empresa já patrocina a organização.');
    run("UPDATE web_sponsors SET state='accepted',accepted_day=? WHERE career_id=? AND id=?",[day,careerId,id]);
+   const kit=sponsorKit(id);
+   if(kit)run('INSERT INTO web_equipment_stock VALUES(?,?,?) ON CONFLICT(career_id,sku) DO UPDATE SET quantity=quantity+excluded.quantity',[careerId,kit,sponsorKitCount(id)]);
    run('COMMIT',[]);
  }catch(error){run('ROLLBACK',[]);throw error;}
 }
@@ -107,12 +128,14 @@ export function rejectSponsor(run:Run,read:Read,careerId:string,id:string){
 
 export function paySponsors(run:Run,read:Read,all:All,careerId:string,from:number,to:number){
  for(const offer of all("SELECT * FROM web_sponsors WHERE career_id=? AND state='accepted'",[careerId])){
+   const payment=sponsorCashOnlyValue(String(offer.id),Number(offer.payment));
+   if(!payment)continue;
    const start=Number(offer.accepted_day),end=start+Number(offer.duration)-1;
    for(let cursor=start;cursor<=end;cursor+=30){
      const due=Math.min(cursor+29,end);if(due<=from||due>to)continue;
      const key='sponsor:'+offer.id+':'+due;
      if(read('SELECT 1 FROM web_cash_events WHERE career_id=? AND event_key=?',[careerId,key]))continue;
-     const amount=Math.round(Number(offer.payment)*(due-cursor+1)/30);
+     const amount=Math.round(payment*(due-cursor+1)/30);
      recordCash(run,careerId,key,due,'sponsor',amount,'Parcela de patrocínio: '+offer.company+'.');
      run('UPDATE careers SET balance=balance+? WHERE id=?',[amount,careerId]);
    }

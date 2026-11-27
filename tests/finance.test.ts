@@ -11,6 +11,7 @@ import {initializeFinance,refreshSponsorOffers,acceptSponsor,rejectSponsor,paySp
 import {developPlayer} from '../src/game-core/development.ts';
 import {definitions} from '../src/game-core/attributes.ts';
 import {departPlayer} from '../src/game-core/market.ts';
+import {commercialRecognition} from '../src/game-core/finance.ts';
 
 const player:Player={id:7,nickname:'Young',name:'Young Silva',mode:'MOBA',role:'top',overall:50,organization:null,team:null,country:'BR',birthDay:-6900,portraitIndex:0,estimateLow:70,estimateHigh:80,ceiling:80,attributes:Object.fromEntries(definitions.MOBA.map(key=>['moba_'+key,50]))};
 function setup(){
@@ -21,6 +22,22 @@ function setup(){
  const all=(sql:string,bind:(string|number)[]=[])=>db.prepare(sql).all(...bind);
  return {db,run,read,all};
 }
+test('patrocínio em kits e híbrido entrega estoque uma única vez e só paga a parcela em dinheiro prevista',()=>{
+ const {db,run,read,all}=setup();
+ initializeFinance(run,read,all,'a');
+ refreshSponsorOffers(run,read,'a',1,40,'FPS','América do Sul',20);
+ const only=String(read("SELECT id FROM web_sponsors WHERE company='ArcForge Periféricos'")!.id);
+ const mixed=read("SELECT id,payment FROM web_sponsors WHERE company='Lumera Monitores'")!;
+ acceptSponsor(run,read,'a',only,40);
+ acceptSponsor(run,read,'a',String(mixed.id),40);
+ assert.throws(()=>acceptSponsor(run,read,'a',only,40),/disponível/);
+ assert.equal(read("SELECT quantity FROM web_equipment_stock WHERE sku='fps-5'")!.quantity,7);
+ paySponsors(run,read,all,'a',1,30);paySponsors(run,read,all,'a',1,30);
+ assert.equal(read("SELECT SUM(amount) total FROM web_cash_events WHERE category='sponsor'")!.total,mixed.payment);
+ assert.equal(commercialRecognition(1,0,0),10);
+ assert.ok(commercialRecognition(181,40,2)>10);
+ db.close();
+});
 test('extrato recupera valores existentes uma vez sem mexer no saldo',()=>{
  const {db,run,read,all}=setup();hire(run,read,'a',player);
  const balance=read('SELECT balance FROM careers')!.balance;

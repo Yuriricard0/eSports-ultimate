@@ -1,6 +1,95 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {appHarness} from './helpers/component-harness.ts';
+import {createDoubleElimination,progressDoubleElimination} from '../src/game-core/competition-formats.ts';
+import {defaultCompetitionConfig,type Competition,type Season} from '../src/game-core/competitions.ts';
+
+test('chave visível segue o motor e abre a série escolhida pelo ID',()=>{
+ const participants=['Nova Wolves','Iron Ravens','Aurora','Titan'].map((name,index)=>({id:'t'+index,organization:'org'+index,name,code:'E'+index,logo:'',strength:50,reputation:50}));
+ const edition:Competition={id:'s1:major',key:'cs_major',name:'Major',region:'Global',mode:'FPS',season:1,prestige:'Major',prize:0,reputationGain:0,
+   finalBestOf:5,format:'knockout',participants,fixtures:[],champion:null,finalOrder:[],startDay:10,endDay:70,
+   doubleElimination:createDoubleElimination(participants.map(team=>team.id),{upper:3,lower:3,final:5,grandFinal:'reset'})};
+ progressDoubleElimination(edition);
+ const first=edition.fixtures[0];
+ first.result={winner:first.home,score:[2,1],maps:[],completedDay:first.day};
+ let selected='';
+ const app=appHarness({},[],'CompetitionBracket',{edition,open:(id:string)=>{selected=id;}});
+ app.render();
+ assert.match(app.text(),/Chave superior/);
+ assert.match(app.text(),/Chave inferior/);
+ assert.match(app.text(),/Grande final/);
+ assert.match(app.text(),/Série de desempate/);
+ const card=app.button('Nova Wolves');
+ assert.match(card.props.children.props.children[1][0].props.className,/bracket-winner/);
+ card.props.onClick();
+ assert.equal(selected,first.id);
+});
+
+function portalFixture(){
+ const participants=['Nova Wolves','Iron Ravens'].map((name,index)=>({id:'t'+index,organization:'o'+index,name,code:'T'+index,logo:'',strength:50,reputation:50}));
+ const edition:Competition={id:'s1:major',key:'cs_major',name:'Major',region:'Global',mode:'FPS',season:1,prestige:'Major',prize:10000,reputationGain:5,
+   finalBestOf:3,format:'knockout',participants,fixtures:[],champion:null,finalOrder:[],startDay:10,endDay:24};
+ edition.fixtures.push({id:'series-1',competitionId:edition.id,day:10,season:1,home:'t0',away:'t1',phase:'final',round:1,bestOf:3,status:'scheduled',result:null});
+ const regional:Competition={...edition,id:'s1:regional',key:'regional',name:'Liga Regional',prestige:'Regional',region:'Brasil',mode:'MOBA',fixtures:[]};
+ const season:Season={number:1,year:2027,startDay:1,endDay:24,notices:[],editions:[edition,regional]};
+ return {season,edition};
+}
+
+test('sala de troféus exibe somente conquistas da organização e abre o arquivo da edição',async()=>{
+ const {season,edition}=portalFixture();
+ edition.participants[0]={...edition.participants[0],id:'career',organization:'career'};
+ edition.champion='career';
+ edition.fixtures[0]={...edition.fixtures[0],home:'career',status:'completed',result:{winner:'career',score:[2,0],maps:[],completedDay:10}};
+ const other=season.editions[1];other.champion='t1';
+ const app=appHarness({listCompetitions:async()=>({seasons:[season],awards:[],config:defaultCompetitionConfig})},[],'TrophyRoom',{
+   career:{id:'gallery-test',name:'Nova Wolves',code:'NVW',mode:'FPS',color:'#ee4371',symbol:'animals_wolf'},
+   onOpenFixture:()=>{},
+ });
+ app.render();await app.flush();
+ assert.match(app.text(),/Sala de Troféus/);
+ assert.doesNotMatch(app.text(),/Liga Regional/);
+ app.button('Major').props.onClick();app.render();
+ app.button('Voltar à galeria').props.onClick();app.render();
+ assert.ok(app.button('Major'));
+});
+
+test('portal filtra competições de terceiros e conserva favoritos ao reabrir',async()=>{
+ const {season}=portalFixture(),storage=new Map<string,string>();
+ const repo={listCompetitions:async()=>({seasons:[season],awards:[],config:defaultCompetitionConfig})};
+ const props={career:{id:'portal-test',mode:'FPS',day:5,balance:0},onOpenFixture:()=>{}};
+ const app=appHarness(repo,[],'Competitions',props,storage);
+ app.render();await app.flush();
+ assert.match(app.text(),/Major/);assert.match(app.text(),/Liga Regional/);
+ app.control('Favoritar Major').props.onClick();app.render();
+ app.button('Internacionais').props.onClick();app.render();
+ assert.doesNotMatch(app.text(),/Liga Regional/);
+ app.button('Major').props.onClick();app.render();
+ const detail=app.component('CompetitionEdition');assert.equal(detail.props.edition.id,'s1:major');
+ assert.equal(detail.props.favorite,true);
+ detail.props.back();app.render();
+ const reopened=appHarness(repo,[],'Competitions',props,storage);
+ reopened.render();await reopened.flush();
+ reopened.button('Favoritas').props.onClick();reopened.render();
+ assert.equal(reopened.control('Favoritar Major').props['aria-pressed'],true);
+ assert.doesNotMatch(reopened.text(),/Liga Regional/);
+});
+
+test('página de campeonato abre organizações, séries e os regulamentos pelos dados da edição',()=>{
+ const {season,edition}=portalFixture();
+ let fixture='',organization='';
+ const page=appHarness({},[],'CompetitionEdition',{edition,season,seasons:[season],day:8,favorite:false,
+   openFixture:(id:string)=>{fixture=id;},openOrganization:(id:string)=>{organization=id;}});
+ page.render();
+ assert.match(page.text(),/Próximos confrontos/);
+ page.button('Ver confronto').props.onClick();assert.equal(fixture,'series-1');
+ page.button('Nova Wolves').props.onClick();assert.equal(organization,'o0');
+ page.button('Playoffs').props.onClick();page.render();
+ assert.match(page.text(),/Nova Wolves.*Iron Ravens/);
+ page.button('Estatísticas').props.onClick();page.render();
+ assert.match(page.text(),/0\s+séries concluídas/);
+ page.button('Regulamento').props.onClick();page.render();
+ assert.match(page.text(),/Pináculo do Major/);
+});
 
 test('Academy navega entre visão geral, atletas e a mesma central de scouting',async()=>{
  let opened=false;

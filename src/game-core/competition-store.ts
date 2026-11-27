@@ -1,6 +1,9 @@
 import type {Season} from './competitions.ts';
 import {recordCash} from './finance.ts';
 import {creditAiPrize} from './ai-finance.ts';
+import {championshipFromResults} from './competition-history.ts';
+import {athleteAge} from './development.ts';
+import type {Player} from './recruitment.ts';
 type Bind=(string|number)[];
 type Run=(sql:string,bind:Bind)=>void;
 type Read=(sql:string,bind:Bind)=>Record<string,unknown>|undefined;
@@ -44,10 +47,13 @@ export function storeNewSeason(run:Run,read:Read,careerId:string,season:Season){
 
 // Called inside the same transaction as the game/day advance. The award's
 // unique key is the receipt for both title and payment, never a repeatable grant.
-export function persistSeason(run:Run,read:Read,careerId:string,season:Season,day:number){
+export function persistSeason(run:Run,read:Read,careerId:string,season:Season,day:number,players?:Player[]){
  for(const edition of season.editions){
+   if(edition.key===season.pyramid?.playIn)continue;
    if(!edition.champion||read('SELECT 1 FROM web_competition_awards WHERE career_id=? AND season=? AND competition_id=?',[careerId,season.number,edition.id]))continue;
    const champion=edition.participants.find(p=>p.id===edition.champion)!;
+   const youth=players&&new Set(players.filter(player=>Number.isFinite(player.birthDay)&&athleteAge(player.birthDay,day)<21).map(player=>player.id));
+   edition.championship??=championshipFromResults(edition,youth);
    run('INSERT INTO web_competition_awards VALUES(?,?,?,?,?,?,?,?,?,?,?)',[careerId,season.number,edition.id,champion.id,champion.organization,day,edition.name,edition.mode,edition.prestige,edition.prize,edition.reputationGain]);
    if(champion.id==='career'){
      run('UPDATE careers SET balance=balance+? WHERE id=?',[edition.prize,careerId]);

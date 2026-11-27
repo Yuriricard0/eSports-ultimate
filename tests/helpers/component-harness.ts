@@ -9,6 +9,7 @@ import ts from 'typescript';
 export function appHarness(repository:Record<string,unknown>,players:unknown[]=[],entry='App',props:Record<string,unknown>={},storage=new Map<string,string>()){
  const values:any[]=[],effects=new Map<number,{deps:unknown[];cleanup?:()=>void}>(),components=new Map<string,any>();let cursor=0,queued:(()=>void)[]=[];
  const hooks={
+   useMemo<T>(factory:()=>T){return factory();},
    useState(initial:any){const index=cursor++;if(!(index in values))values[index]=typeof initial==='function'?initial():initial;return [values[index],(value:any)=>{values[index]=typeof value==='function'?value(values[index]):value;}];},
    useRef(initial:any){const index=cursor++;if(!(index in values))values[index]={current:initial};return values[index];},
    useEffect(callback:()=>any,deps:unknown[]){const index=cursor++,old=effects.get(index);if(old&&deps.every((value,i)=>Object.is(value,old.deps[i])))return;

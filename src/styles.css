@@ -263,4 +263,108 @@ html[data-contrast=high]{--muted:#c8d1e4}html[data-contrast=high] button:not(:di
 .tactical-board input[type=range]{max-width:100%}
 .match-evidence{padding:10px 12px;margin:10px 0;border-left:3px solid #a53b5a;background:#192131}
 .match-evidence summary{cursor:pointer}.match-evidence details{margin:8px 0}
+.competition-path ol{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px;padding:0;list-style:none}
+.competition-path li{border-left:3px solid #b12e50;background:#182030;border-radius:6px;padding:9px}
+.competition-path small{display:block;color:#bac6d9;margin-top:4px}
+.bracket-scroll{overflow-x:auto;padding:12px;background:#090e18;border:1px solid #303b4f;border-radius:10px}
+.bracket-board{position:relative}
+.bracket-links{position:absolute;inset:0;pointer-events:none}
+.bracket-links path{fill:none;stroke:#6389a6;stroke-width:2}
+.bracket-links path.drop{stroke:#c58165;stroke-dasharray:4 4}
+.bracket-lane{position:absolute;left:0;color:#aebdd3}
+.bracket-match{position:absolute;display:grid;align-content:center;text-align:left;padding:5px 8px;border:1px solid #41516a;border-radius:7px;background:#142033;color:#eef4ff}
+.bracket-match>span{min-height:25px;display:flex;align-items:center;gap:6px;overflow:hidden;padding:1px 4px}
+.bracket-match>span>span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bracket-match img,.bracket-match svg{width:19px;height:19px;flex:none;object-fit:contain}
+.bracket-match .club-emblem{width:19px;height:19px;min-width:19px;flex:none;--emblem-border:1px!important}
+.bracket-match .club-emblem strong{display:none}
+.bracket-match small{font-size:11px;color:#b9c7dd}
+.bracket-winner{background:#163c36;color:#acffe1;font-weight:700}
+.bracket-final{background:#33261a;border-color:#c19652}
+
+.event-hero{--event-accent:#f05070;position:relative;display:flex;align-items:flex-end;justify-content:space-between;gap:24px;min-height:310px;margin:12px 0 16px;padding:clamp(18px,4vw,42px);overflow:hidden;border:1px solid color-mix(in srgb,var(--event-accent),#25334a 70%);border-radius:14px;isolation:isolate;background:radial-gradient(ellipse at 80% 38%,color-mix(in srgb,var(--event-accent),transparent 76%),transparent 47%),linear-gradient(90deg,#0b1020 4%,#0c1022bd 48%,#090e1959),linear-gradient(0deg,#090e19 5%,transparent 90%),url('/assets/backgrounds/arena-central.png') center 52%/cover;}
+.event-page .event-hero{--event-accent:inherit}
+.event-portal-hero{min-height:225px}
+.event-hero-local{min-height:255px;background:linear-gradient(100deg,#0e1422 10%,color-mix(in srgb,var(--event-accent),#141925 87%)),repeating-linear-gradient(135deg,#7896bd22 0 1px,transparent 1px 18px);border-color:#48516a}
+.event-hero h1{margin:7px 0;font-size:clamp(28px,5vw,60px);letter-spacing:-.045em;line-height:1.05;text-wrap:balance}
+.event-hero p{margin:5px 0;color:#d1dbed}
+.event-kicker{text-transform:uppercase;letter-spacing:.1em;font-weight:700;color:var(--event-accent);font-size:.82rem}
+.event-favorite{position:absolute;top:15px;right:15px;background:#0b1223d9}
+.event-mark{--event-accent:#dfc178;position:relative;display:inline-grid;grid-template-columns:1fr 1.2fr 1fr;align-items:center;gap:3px;min-width:52px;width:52px;aspect-ratio:1;padding:9px;border-radius:14px;color:var(--event-accent);background:color-mix(in srgb,var(--event-accent),#101729 87%);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--event-accent),transparent 60%);transform:rotate(-6deg)}
+.event-mark i,.event-mark b{display:block;height:56%;background:currentColor;transform:skewY(-18deg);border-radius:2px}
+.event-mark b{height:84%;opacity:.9;transform:skewY(10deg)}
+.event-mark-crown i{height:44%;align-self:end}.event-mark-crown b{clip-path:polygon(50% 0,100% 40%,80% 100%,20% 100%,0 40%)}
+.event-mark-spire b{clip-path:polygon(50% 0,100% 80%,50% 100%,0 80%)}
+.event-mark-shield{clip-path:polygon(0 0,100% 0,100% 70%,50% 100%,0 70%);transform:none}
+.event-mark-orbit{border-radius:50%;transform:rotate(-23deg)}.event-mark-orbit b{border-radius:50%}
+.event-mark-entry{border-radius:6px;transform:none}.event-mark-entry i{height:32%}
+.event-hero .event-mark{width:clamp(77px,13vw,158px);margin:16px;padding:clamp(14px,2vw,31px);gap:clamp(4px,1vw,12px)}
+.event-tabs{display:flex;gap:7px;flex-wrap:wrap;margin:12px 0 18px}
+.event-tabs button[aria-pressed="true"]{background:#8d183a;border-color:#e74366;color:#fff}
+.event-directory{margin-bottom:20px}
+.event-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(275px,100%),1fr));gap:10px}
+.event-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px;align-items:center;border-radius:10px;padding:4px;background:#10192a;border:1px solid #31405a}
+.event-card-main{display:flex;align-items:center;gap:12px;min-width:0;text-align:left;background:none;border:0}
+.event-card-main>span:last-child{display:grid;gap:3px}.event-card-main strong{color:#f3f6fb}.event-card-main small{color:#aebdd2}
+.event-card-star{margin-right:5px;padding:5px 9px;color:#ffd276}.event-card-star[aria-pressed="true"]{background:#4a351b;border-color:#a98046}
+.event-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:10px 0 18px}
+.event-metrics div{display:grid;gap:7px;background:#151e30;border:1px solid #34435a;border-radius:10px;padding:clamp(10px,2vw,21px)}
+.event-metrics strong{font-size:clamp(16px,2.5vw,28px);color:#f5f7ff}.event-metrics small{color:#aebdd3}
+.event-fixtures,.event-participants,.event-history{display:grid;gap:8px;list-style:none;padding:0;margin:10px 0}
+.event-fixtures li{display:grid;grid-template-columns:minmax(100px,1fr) minmax(150px,2.4fr) auto;align-items:center;gap:12px;padding:10px;border-radius:7px;background:#141e30}
+.event-fixtures small{display:block;color:#acbacf}.event-fixtures strong span{color:var(--event-accent)}
+.event-participants{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
+.event-participants li{display:flex;align-items:center;gap:8px;background:#141e30;padding:7px;border-radius:7px}
+.event-participants img,.event-participants li>span{display:grid;place-items:center;min-width:35px;width:35px;height:35px;object-fit:contain;color:#c4d3ea;font-weight:700;font-size:11px}
+.event-participants button{background:none;border:none;text-align:left;padding:3px}
+@media(max-width:680px){.event-hero{min-height:245px;gap:8px}.event-hero .event-mark{margin:4px;width:67px}.event-fixtures li{grid-template-columns:1fr auto}.event-fixtures li time{grid-column:1/-1}.event-metrics{gap:5px}}
+
+.trophy-room-hero{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:clamp(18px,4vw,38px);margin-bottom:0;border:1px solid #564535;border-radius:12px 12px 0 0;background:radial-gradient(ellipse at 93% 0%,#58412c,#16161be8 55%),#17151a}
+.trophy-room-hero h1{font-family:Georgia,serif;font-weight:500;font-size:clamp(28px,5vw,52px);color:#fff5e7;margin:0 0 7px}
+.trophy-room-hero p{margin:0;color:#dac7af}
+.trophy-room-hero .club-emblem{width:clamp(54px,10vw,88px);height:auto;aspect-ratio:1;flex:none}
+.trophy-totals{display:flex;flex-wrap:wrap;gap:12px 28px;padding:13px clamp(18px,4vw,38px);border:1px solid #564535;border-top:0;border-radius:0 0 12px 12px;color:#dbcfbe;background:#1e1a1a}
+.trophy-totals strong{color:#f6d4a1;margin-right:4px;font-variant-numeric:tabular-nums}
+.trophy-filters{margin:22px 0 12px}
+.trophy-gallery{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px;margin:14px 0 25px}
+.trophy-card{display:grid;grid-template-rows:auto 1fr;align-items:stretch;gap:0;text-align:left;padding:0;background:#19191f;border:1px solid #40352d;border-radius:11px;overflow:hidden;transition:border-color .2s,transform .2s}
+.trophy-card:hover,.trophy-card:focus-visible{border-color:#d6b17c;transform:translateY(-2px)}
+.trophy-card-stage{display:block;min-width:0;overflow:hidden;background:#101012}
+.trophy-card-stage .trophy-art{aspect-ratio:1;border-radius:0;object-fit:cover}
+.trophy-card-caption{position:relative;display:grid;align-content:start;gap:5px;padding:13px 32px 14px 13px}
+.trophy-card-caption small{color:#e1ba88;font-size:11px}.trophy-card-caption strong{color:#fff5e8;font-size:clamp(15px,2vw,21px);font-weight:600}
+.trophy-card-caption span{color:#c7bcae;font-size:12px}.trophy-card-caption b{position:absolute;right:12px;bottom:13px;color:#dfc197}
+@media(max-width:900px){.trophy-gallery{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:425px){.trophy-gallery{grid-template-columns:1fr}}
+.trophy-room{max-width:1260px;margin-inline:auto}
+.trophy-room-hero{background:linear-gradient(100deg,#141315 30%,#30241ecd 100%),url('/assets/backgrounds/arena-central.png') center 55%/cover}
+.trophy-gallery .trophy-spotlight{grid-column:1/-1;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);grid-template-rows:auto;min-height:255px;border-color:#87704d;background:radial-gradient(ellipse at 15% 100%,#3b2c20,#1c191b 68%);}
+.trophy-spotlight .trophy-card-stage{display:grid;place-items:center;background:#141211}
+.trophy-spotlight .trophy-card-stage .trophy-art{max-height:345px;object-fit:contain}
+.trophy-spotlight .trophy-card-caption{justify-content:start;align-content:center;gap:12px;padding:clamp(20px,5vw,58px)}
+.trophy-spotlight .trophy-card-caption strong{font-family:Georgia,serif;font-weight:500;font-size:clamp(24px,5vw,49px);line-height:1.06;text-wrap:balance}
+.trophy-spotlight .trophy-card-caption>.trophy-open{width:max-content;max-width:100%;padding:.55rem 0;border-bottom:1px solid #997e5b;color:#f1d9b4;margin-top:5px}
+.trophy-open span{margin-left:6px;color:inherit}
+.finance-projection-bars{display:grid;gap:9px;padding:0;list-style:none}
+.finance-projection-bars li{display:grid;grid-template-columns:auto minmax(38px,1fr) minmax(85px,auto);align-items:center;gap:10px;font-variant-numeric:tabular-nums}
+.finance-projection-bars strong{text-align:right}
+.finance-projection-track{position:relative;height:10px;border-radius:3px;background:linear-gradient(90deg,#252c39 49.7%,#78869a 49.7% 50.3%,#252c39 50.3%)}
+.finance-projection-track i{position:absolute;height:100%;border-radius:3px;background:#5bb89c}
+.finance-projection-track i.deficit{background:#e77584}
+.sponsor-name{display:flex;align-items:center;gap:9px}
+.sponsor-name span{display:grid;place-items:center;width:30px;height:30px;border-radius:7px;font-size:11px;color:#fff}
+@media(max-width:550px){.trophy-gallery .trophy-spotlight{grid-template-columns:1fr}.trophy-spotlight .trophy-card-stage .trophy-art{max-height:280px}}
+.trophy-art{display:block;width:100%;height:auto;border-radius:8px;overflow:hidden}
+.trophy-display,.trophy-ceremony{display:grid;grid-template-columns:minmax(105px,230px) 1fr;align-items:center;gap:clamp(12px,4vw,38px)}
+.trophy-display .club-emblem,.trophy-display>div>img,.trophy-ceremony .club-emblem,.trophy-ceremony>div>img{width:52px;height:52px;object-fit:contain}
+.trophy-details{margin-top:14px}
+.trophy-lineup,.trophy-honors{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(150px,100%),1fr));gap:8px;list-style:none;padding:0}
+.trophy-lineup li,.trophy-honors li{display:grid;gap:4px;padding:10px;background:#151e30;border:1px solid #31405a;border-radius:8px}
+.trophy-lineup small,.trophy-honors small{color:#b9c6d9}
+.trophy-ceremony{position:relative;background:radial-gradient(ellipse at 20% 15%,#70522861,#111a2a 70%);border-color:#b48f53;animation:trophy-reveal .4s ease-out both}
+.trophy-ceremony .event-kicker{color:#efca86;display:block;margin-bottom:8px}
+.trophy-ceremony-world{grid-template-columns:minmax(150px,310px) 1fr;box-shadow:0 0 44px #d49c3c35;background:radial-gradient(ellipse at 18% 30%,#b8782b59,#111a2a 67%)}
+@keyframes trophy-reveal{from{opacity:.5;transform:translateY(7px)}to{opacity:1;transform:none}}
+@media(max-width:620px){.trophy-ceremony,.trophy-display{grid-template-columns:1fr}.trophy-ceremony>.trophy-art,.trophy-display>.trophy-art{max-width:270px;justify-self:center}}
+@media(prefers-reduced-motion:reduce){.trophy-ceremony{animation:none}.trophy-card{transition:none}.trophy-card:hover{transform:none}}
 @media(max-width:750px){.tactical-layout{grid-template-columns:1fr 1fr}.tactical-layout canvas{grid-column:1/-1}.tactical-side.side-1{grid-column:2}}

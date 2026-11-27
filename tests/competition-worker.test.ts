@@ -13,8 +13,11 @@ import {negotiationSchema} from '../src/game-core/negotiation.ts';
 import {matchSchema} from '../src/game-core/match-store.ts';
 import {generationVersion} from '../src/game-core/generation.ts';
 import {definitions,roles} from '../src/game-core/attributes.ts';
-import {nextUserFixture,type Season} from '../src/game-core/competitions.ts';
+import {generateSeason,nextUserFixture,progressBracket,type Season} from '../src/game-core/competitions.ts';
+import {createDoubleElimination} from '../src/game-core/competition-formats.ts';
 import {restoreWebBackup} from '../src/game-core/backup.ts';
+import {startingEntry} from '../src/game-core/entry.ts';
+import {careerCreationVersion} from '../src/version.ts';
 
 const catalog=JSON.parse(readFileSync('public/data/real_teams_2026.json','utf8'));
 for(const mode of ['MOBA','FPS'] as const)test('temporada completa '+mode+': agenda, séries, títulos, crédito único, recarga e ano seguinte',async()=>{
@@ -58,6 +61,17 @@ for(const mode of ['MOBA','FPS'] as const)test('temporada completa '+mode+': age
    assert.ok(played>0);assert.equal(season.editions.length,mode==='MOBA'?6:4);
    const state=await request('competition-state','a');assert.equal(state.awards.length,season.editions.length);
    const ownAwards=state.awards.filter((a:any)=>a.team_id==='career');assert.ok(ownAwards.length>0,'carreira forte deve conquistar um título');
+   const won=season.editions.filter(edition=>ownAwards.some((award:{competition_id:string})=>award.competition_id===edition.id));
+   assert.equal(won.length,ownAwards.length);
+   for(const edition of won){
+     const title=edition.championship;
+     assert.ok(title,'título precisa guardar a escalação e a final');
+     assert.equal(title.champion.id,'career');
+     assert.equal(title.roster.length,5);
+     assert.ok(title.roster.every(athlete=>own.some(player=>player.id===athlete.id&&player.nickname===athlete.nickname&&player.role===athlete.role)));
+     assert.ok(title.finalId&&edition.fixtures.some(game=>game.id===title.finalId&&game.result?.winner==='career'));
+     assert.ok(title.honors.some(honor=>honor.kind==='MVP da final'));
+   }
    const prize=ownAwards.reduce((sum:number,a:any)=>sum+a.prize,0);
    const paid=Number(db.prepare('SELECT COALESCE(SUM(paid),0) total FROM web_payroll').get()!.total);
    const sponsorship=Number(db.prepare("SELECT COALESCE(SUM(amount),0) total FROM web_cash_events WHERE category='sponsor'").get()!.total);
@@ -82,8 +96,62 @@ for(const mode of ['MOBA','FPS'] as const)test('temporada completa '+mode+': age
    const after=await request('competition-state','a');assert.equal(after.awards.length,state.awards.length);assert.equal(after.seasons.length,2);
    restoreWebBackup((sql,bind=[])=>db.prepare(sql).all(...bind),(sql,bind=[])=>{db.prepare(sql).run(...bind);},()=>'copy');
    const restored=await request('competition-state','copy');assert.equal(restored.seasons.length,2);assert.equal(restored.awards.length,state.awards.length);
+   assert.equal(JSON.stringify(restored.seasons.find((item:Season)=>item.number===season.number)?.editions.map((edition:Season['editions'][number])=>edition.championship)),
+     JSON.stringify(season.editions.map(edition=>edition.championship)));
    const copiedFinance=await request('finance-state',{careerId:'copy'});assert.equal(copiedFinance.balance,finance.balance);assert.equal(copiedFinance.ledgerTotal,finance.ledgerTotal);
    assert.deepEqual(JSON.parse(JSON.stringify(await request('news',{careerId:'copy',filter:{category:'Campeonatos',pageSize:50}}))),JSON.parse(JSON.stringify(news)));
    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+   if(mode==='MOBA'){
+     const current=(await request('list')).find(row=>row.id==='a');
+     const newSeason=generateSeason({...current,createdVersion:careerCreationVersion,entry:startingEntry(catalog,'BR',mode)},
+       catalog,[...world,...own],await request('contracts','a'),second.number,second.startDay);
+     const cup=newSeason.editions.find(edition=>edition.key==='br_cup')!;
+     db.prepare('UPDATE web_competition_seasons SET data=? WHERE career_id=? AND number=?').run(JSON.stringify(newSeason),'a',second.number);
+     const enroll=()=>request('enroll-competition',{careerId:'a',id:cup.id});
+     await assert.rejects(enroll,/prazo/);
+     db.prepare('UPDATE careers SET day=? WHERE id=?').run(cup.entryWindow!.opens,'a');
+     const enrolled=await enroll() as Season;
+     assert.equal(enrolled.editions.find(edition=>edition.id===cup.id)!.participants.filter(team=>team.id==='career').length,1);
+     db.close();db=new DatabaseSync(path);request=workerHarness(db,catalog);
+     assert.equal(JSON.stringify(await enroll()),JSON.stringify(enrolled));
+     assert.equal(JSON.stringify((await request('competition-state','a')).seasons[0]),JSON.stringify(enrolled));
+     const registeredEdition=enrolled.editions.find(edition=>edition.id===cup.id)!;
+     await assert.rejects(()=>request('training-event-plan',{careerId:'a',start:registeredEdition.startDay+7,
+       slot:{offset:0,kind:'team',intensity:'normal',objective:'Preparação'}}),/compromisso de partida/);
+     const isolated={...enrolled,editions:[registeredEdition]};
+     const cutoff=registeredEdition.startDay-1;
+     db.prepare('UPDATE careers SET day=? WHERE id=?').run(cutoff,'a');
+     db.prepare('UPDATE web_competition_seasons SET data=? WHERE career_id=? AND number=?').run(JSON.stringify(isolated),'a',second.number);
+     await request('advance',{careerId:'a',expectedDay:cutoff,days:1});
+     const locked=(await request('competition-state','a')).seasons[0] as Season;
+     assert.deepEqual(Array.from(locked.editions[0].registration!.players),own.map(player=>player.id));
+     const game=nextUserFixture(locked)!;
+     db.prepare('UPDATE web_contracts SET starter=0 WHERE career_id=? AND player_id=?').run('a',own[0].id);
+     await assert.rejects(()=>request('play-competition',{careerId:'a',id:game.id}),/inelegíveis/);
+     const forfeited=await request('play-competition',{careerId:'a',id:game.id,forfeit:true});
+     assert.equal(forfeited.season.editions[0].fixtures.find(gameInEdition=>gameInEdition.id===game.id).result.administrative,'ineligible-lineup');
+     await assert.rejects(()=>request('play-competition',{careerId:'a',id:game.id,forfeit:true}),/concluído/);
+   }else{
+     const original=second.editions[0],ownTeam=original.participants.find(team=>team.id==='career')!;
+     const participants=[ownTeam,...original.participants.filter(team=>team.id!=='career').slice(0,3)];
+     const edition={...original,participants,fixtures:[],doubleElimination:createDoubleElimination(participants.map(team=>team.id),{upper:1,lower:1,final:3,grandFinal:'reset'})};
+     const currentDay=edition.startDay;
+     progressBracket(edition);
+     const userFirst=edition.fixtures.find(game=>game.home==='career')!;
+     userFirst.result={winner:'career',score:[1,0],maps:[],completedDay:currentDay};userFirst.status='completed';
+     edition.fixtures.find(game=>game!==userFirst)!.day=currentDay+1;
+     const staged={...second,editions:[edition]};
+     db.prepare('UPDATE web_competition_seasons SET data=? WHERE career_id=? AND number=?').run(JSON.stringify(staged),'a',second.number);
+     db.prepare('UPDATE careers SET day=? WHERE id=?').run(currentDay,'a');
+     assert.equal(nextUserFixture(staged),undefined);
+     const advanced=await request('advance',{careerId:'a',expectedDay:currentDay,days:30});
+     const updated=(await request('competition-state','a')).seasons[0] as Season;
+     assert.equal(advanced.report.advancedDays,14);
+     assert.equal(advanced.report.blockedFixtureId,nextUserFixture(updated)?.id);
+     assert.equal(advanced.career.day,nextUserFixture(updated)?.day);
+     const completed=updated.editions[0].fixtures.filter(game=>game.result);
+     assert.equal(completed.length,3);
+     assert.ok(completed.every(game=>game.result!.completedDay<=advanced.career.day));
+   }
  }finally{db.close();if(!resolve(dir).startsWith(resolve(tmpdir(),'uem-season-')))throw Error('Diretório temporário inesperado.');rmSync(dir,{recursive:true,force:true});}
 });

@@ -12,7 +12,10 @@ import {schema,careerInput,deleteCareer,validateSaveName,saveVersionSchema,type 
 import {careerCreationVersion} from '../version';
 import {contractSchema,selectStarter,terms,type Contract,type Player} from '../game-core/recruitment';
 import {contractFixtures,contractParticipation,expectationDelta,expiryLevel,renewalGrounds,type SquadRole} from '../game-core/contract-expectations';
-import {advanceCareerDay,calendarVersion,migrateCalendar} from '../game-core/calendar';
+import {advanceCareerDay,calendarVersion,migrateCalendar,salaryDue} from '../game-core/calendar';
+import {cashProjection,paymentPeriods,type ScheduledCash} from '../game-core/finance-projection';
+import {countryRegions} from '../game-core/countries';
+import {equipmentCatalog,equipmentTraining,sponsorCashOnlyValue,type EquipmentStock} from '../game-core/equipment';
 import {defaultIdentity,phaseOneSchema,validateIdentity} from '../game-core/identity';
 import {assertBackupFile,readGodotCareer,readGodotRoster,restoreWebBackup} from '../game-core/backup';
 import type {Mode} from '../game-core/attributes';
@@ -33,9 +36,11 @@ import {assignAcademy,setTrainingFocus} from '../game-core/academy';
 import type {PlayerTraining,TrainingPlan} from '../game-core/training';
 import {matchSchema,prepareMatch,completeMatch} from '../game-core/match-store';
 import {careerLineup,rivalLineup,matchStrength,applyMatchConditions,simulateMatch,type MatchResult,type MatchSide} from '../game-core/matches';
-import {defaultCompetitionConfig,generateSeason,hashSeed,isScheduledFixture,planCompetitionAdvance,playCompetitionFixture,validateCompetitionConfig,type Participant,type Season} from '../game-core/competitions';
+import {defaultCompetitionConfig,enrollOptionalEvent,generateSeason,hashSeed,isScheduledFixture,optionalEventDays,planCompetitionAdvance,playCompetitionFixture,validateCompetitionConfig,type Participant,type Season} from '../game-core/competitions';
 import {competitionSchema,latestSeason,nextSeasonStart,storeNewSeason,persistSeason} from '../game-core/competition-store';
-import {initializeFinance,refreshSponsorOffers,acceptSponsor,rejectSponsor,paySponsors,upgradeFacility,facilityEfficiency,type FacilityLevels} from '../game-core/finance';
+import {buildCompetitionRankings} from '../game-core/competition-rankings';
+import {competitionLineup,lockCompetitionRosters} from '../game-core/competition-registration';
+import {commercialRecognition,initializeFinance,refreshSponsorOffers,acceptSponsor,rejectSponsor,paySponsors,upgradeFacility,facilityEfficiency,recordCash,type FacilityLevels} from '../game-core/finance';
 import {syncAiAccounts,payAiSalaries,aiCanBuy,aiPurchase,aiHire,aiReceiveTransfer} from '../game-core/ai-finance';
 import {newsSchema,synchronizeNews,listNews,processMoodEvent,recordDevelopmentNews} from '../game-core/news';
 import {migrateZeroSigningBonus} from '../game-core/contract-migration';
@@ -129,6 +134,17 @@ async function handleRequest(event:MessageEvent){
    WHERE p.career_id=? AND p.member=1 AND NOT EXISTS(SELECT 1 FROM web_contracts c WHERE c.career_id=p.career_id AND c.player_id=p.player_id)
    ORDER BY starter DESC`,[careerId,careerId]) as unknown as Contract[];
  const loansFor=(id:string)=>all('SELECT player_id,origin,destination,club,start_day,end_day,starter FROM web_loans WHERE career_id=? ORDER BY start_day DESC,player_id',[id]) as unknown as Loan[];
+ const registrationIds=(id:string,day:number,loans:Loan[])=>{
+   const active=activeLoans(loans,day);
+   const outgoing=new Set(active.filter(loan=>loan.origin==='career').map(loan=>loan.player_id));
+   const rows=all(`SELECT c.player_id FROM web_contracts c WHERE c.career_id=? AND c.start_day<=? AND c.end_day>=?
+     AND NOT EXISTS(SELECT 1 FROM web_contract_closures x WHERE x.career_id=c.career_id AND x.player_id=c.player_id AND x.start_day=c.start_day AND x.day<=?)
+     UNION SELECT p.player_id FROM web_imported_players p WHERE p.career_id=? AND p.member=1 AND NOT EXISTS(SELECT 1 FROM web_contracts c WHERE c.career_id=p.career_id AND c.player_id=p.player_id)`,
+     [id,day,day,day,id]);
+   const academy=new Set(all('SELECT player_id FROM web_player_training WHERE career_id=? AND academy=1',[id]).map(row=>Number(row.player_id)));
+   const players=rows.map(row=>Number(row.player_id)).filter(player=>!outgoing.has(player)&&!academy.has(player));
+   return [...new Set([...players,...active.filter(loan=>loan.destination==='career').map(loan=>loan.player_id)])].sort((a,b)=>a-b);
+ };
  const trainingRows=(id:string)=>all(`SELECT t.player_id,t.academy,COALESCE(o.focus,t.focus) focus,t.changed_day FROM web_player_training t
    LEFT JOIN web_training_focus_overrides o ON o.career_id=t.career_id AND o.player_id=t.player_id WHERE t.career_id=? ORDER BY t.player_id`,[id]);
  const watched=(id:string)=>all('SELECT player_id FROM web_ranked_watch WHERE career_id=? AND active=1 ORDER BY player_id',[id]).map(row=>Number(row.player_id));
@@ -210,9 +226,13 @@ async function handleRequest(event:MessageEvent){
  };
  const trainingConflict=(id:string,mode:string,day:number)=>{
    const season=latestSeason(read,id);
-   return season?.editions.some(edition=>edition.mode===mode&&edition.fixtures.some(game=>
-     (game.result?.completedDay===day||isScheduledFixture(game)&&(game.day===day||day===get(id)?.day&&game.day<day))&&
-       (game.home==='career'||game.away==='career')))||
+   return season?.editions.some(edition=>{
+     if(edition.mode!==mode)return false;
+     const games=edition.fixtures.filter(game=>game.home==='career'||game.away==='career');
+     return games.some(game=>game.result?.completedDay===day||isScheduledFixture(game)&&(game.day===day||day===get(id)?.day&&game.day<day))||
+       !!edition.entryWindow&&!edition.champion&&games.length>0&&optionalEventDays(edition).includes(day)&&
+       !games.some(game=>game.result&&game.result.winner!=='career');
+   })||
      !!read('SELECT 1 FROM web_matches WHERE career_id=? AND mode=? AND day=?',[id,mode,day]);
  };
  const competitionSide=(participant:Participant,players:Player[],mode:Mode,day:number,careerId:string,protectedIds=ownedIds(careerId),region?:MobaRegion):MatchSide=>{
@@ -236,7 +256,7 @@ async function handleRequest(event:MessageEvent){
      const result=playCompetitionFixture(season,game.id,day,teams,seed);
      for(const map of result.maps)players=applyMatchConditions(players,map);
    }
-   persistSeason(run,read,careerId,season,day);return players;
+   persistSeason(run,read,careerId,season,day,players);return players;
  };
  const writeEntry=(careerId:string,entry:ReturnType<typeof startingEntry>)=>db.exec({
    sql:'INSERT OR IGNORE INTO web_career_entry VALUES(?,?,?,?)',
@@ -575,31 +595,67 @@ async function handleRequest(event:MessageEvent){
  result=listNews(read,all,current.id,input.filter??{},[...world,...imported]);
  }else if(action==='finance-state'){
  const current=get(input.careerId);if(!current)throw Error('Carreira não encontrada.');
- initializeFinance(run,read,all,current.id);refreshSponsorOffers(run,read,current.id,current.day,current.reputation??40);
+ initializeFinance(run,read,all,current.id);
  const seasons=all('SELECT data FROM web_competition_seasons WHERE career_id=? ORDER BY number',[current.id]).map(row=>JSON.parse(String(row.data)) as Season);
+ const exposure=seasons.reduce((sum,season)=>sum+season.editions.reduce((points,event)=>points+
+   event.fixtures.filter(game=>game.result?.maps.length&&(game.home==='career'||game.away==='career')).length*(event.prestige==='Regional'?1:2),0),0);
+ const partners=Number(read("SELECT COUNT(DISTINCT company) total FROM web_sponsors WHERE career_id=? AND state='accepted'",[current.id])?.total??0);
+ const recognition=commercialRecognition(current.day,exposure,partners);
+ refreshSponsorOffers(run,read,current.id,current.day,current.reputation??40,current.mode,countryRegions[current.country],recognition);
  const selected=seasons.find(s=>s.number===input.season)||[...seasons].reverse().find(s=>s.startDay<=current.day);
  const periodStart=selected?.startDay??1,next=selected?seasons.find(s=>s.number>selected.number):undefined;
  const periodEnd=Math.min(current.day,next?next.startDay-1:current.day);
  const totals=read(`SELECT COALESCE(SUM(CASE WHEN amount>0 THEN amount ELSE 0 END),0) income,
    COALESCE(SUM(CASE WHEN amount<0 THEN -amount ELSE 0 END),0) expenses FROM web_cash_events WHERE career_id=? AND day BETWEEN ? AND ?`,[current.id,periodStart,periodEnd])!;
- result={balance:current.balance,reputation:current.reputation??40,periodStart,periodEnd,seasons:seasons.map(s=>({number:s.number,year:s.year,startDay:s.startDay})),
+ const sponsors=all('SELECT * FROM web_sponsors WHERE career_id=? ORDER BY offered_day DESC,id',[current.id]);
+ const outstanding=Number(read('SELECT COALESCE(SUM(amount-paid),0) total FROM web_payroll WHERE career_id=?',[current.id])?.total??0);
+ const horizon=current.day+360;
+ const schedule:ScheduledCash[]=sponsors.filter(row=>row.state==='accepted'&&sponsorCashOnlyValue(String(row.id),Number(row.payment))>0).flatMap(row=>paymentPeriods(
+   Number(row.accepted_day),Number(row.accepted_day)+Number(row.duration)-1,current.day,horizon
+ ).map(period=>({day:period.day,income:Math.round(Number(row.payment)*(period.day-period.start+1)/30)})));
+ const deals=all(`SELECT c.* FROM web_contracts c WHERE c.career_id=? AND c.end_day>? AND c.start_day<=?
+   AND NOT EXISTS(SELECT 1 FROM web_contract_closures x WHERE x.career_id=c.career_id AND x.player_id=c.player_id AND x.start_day=c.start_day)`,[current.id,current.day,horizon]);
+ for(const contract of deals)for(const period of paymentPeriods(Number(contract.start_day),Number(contract.end_day),current.day,horizon)){
+   const expense=salaryDue(all,current.id,contract,period.start,period.day);
+   const recorded=Number(read('SELECT COALESCE(SUM(amount),0) total FROM web_payroll WHERE career_id=? AND player_id=? AND start_day=? AND due_day BETWEEN ? AND ?',
+     [current.id,Number(contract.player_id),Number(contract.start_day),period.start,period.day])?.total??0);
+   schedule.push({day:period.day,expense:Math.max(0,expense-recorded)});
+ }
+ result={balance:current.balance,reputation:current.reputation??40,recognition,periodStart,periodEnd,seasons:seasons.map(s=>({number:s.number,year:s.year,startDay:s.startDay})),
    income:Number(totals.income),expenses:Number(totals.expenses),result:Number(totals.income)-Number(totals.expenses),
    payroll:Number(read('SELECT COALESCE(SUM(salary),0) total FROM web_current_contracts WHERE career_id=?',[current.id])?.total??0),
-   outstanding:Number(read('SELECT COALESCE(SUM(amount-paid),0) total FROM web_payroll WHERE career_id=?',[current.id])?.total??0),
+   outstanding,projection:cashProjection(current.day,current.balance,outstanding,schedule),
    openingBalance:Number(read('SELECT opening_balance FROM web_finance_state WHERE career_id=?',[current.id])?.opening_balance),
    ledgerTotal:Number(read('SELECT COALESCE(SUM(amount),0) total FROM web_cash_events WHERE career_id=?',[current.id])?.total??0),
-   sponsors:all('SELECT * FROM web_sponsors WHERE career_id=? ORDER BY offered_day DESC,id',[current.id]),
+   sponsors,equipment:all('SELECT sku,quantity FROM web_equipment_stock WHERE career_id=? ORDER BY sku',[current.id]),
    facilities:all('SELECT kind,level,upgraded_day FROM web_facilities WHERE career_id=?',[current.id]),
    transactions:all('SELECT event_key,day,category,amount,description FROM web_cash_events WHERE career_id=? AND day BETWEEN ? AND ? ORDER BY day DESC,rowid DESC LIMIT 200',[current.id,periodStart,periodEnd])};
  }else if(action==='sponsor-accept'){
  acceptSponsor(run,read,input.careerId,input.id,get(input.careerId)?.reputation??40);result=get(input.careerId);
  }else if(action==='sponsor-reject'){
  rejectSponsor(run,read,input.careerId,input.id);result=true;
+ }else if(action==='equipment-buy'){
+ const current=get(input.careerId),item=equipmentCatalog.find(row=>row.id===input.sku);
+ if(!current||!item||!item.price||item.mode!==current.mode||!Number.isInteger(input.quantity)||input.quantity<1||input.quantity>10||
+   typeof input.orderId!=='string'||!/^[-a-f0-9]{36}$/.test(input.orderId))throw Error('Compra de equipamento inválida.');
+ const cost=item.price*input.quantity,key='equipment:'+input.orderId;
+ db.transaction(()=>{
+   if(read('SELECT 1 FROM web_cash_events WHERE career_id=? AND event_key=?',[current.id,key]))return;
+   if(get(current.id)!.balance<cost)throw Error('Caixa insuficiente para a compra.');
+   const stock=Number(read('SELECT quantity FROM web_equipment_stock WHERE career_id=? AND sku=?',[current.id,item.id])?.quantity??0);
+   if(stock+input.quantity>10)throw Error('O inventário aceita até dez unidades por kit.');
+   run('INSERT INTO web_equipment_stock VALUES(?,?,?) ON CONFLICT(career_id,sku) DO UPDATE SET quantity=quantity+excluded.quantity',[current.id,item.id,input.quantity]);
+   run('UPDATE careers SET balance=balance-? WHERE id=?',[cost,current.id]);
+   recordCash(run,current.id,key,current.day,'equipment',-cost,input.quantity+' × '+item.name+' '+item.label);
+ });
+ result=get(current.id);
  }else if(action==='facility-upgrade'){
  upgradeFacility(run,read,input.careerId,input.kind,input.expectedLevel);result=get(input.careerId);
  }else if(action==='competition-state'){
- result={seasons:all('SELECT data FROM web_competition_seasons WHERE career_id=? ORDER BY number DESC',[input]).map(row=>JSON.parse(String(row.data))),
-   config:JSON.parse(String(read('SELECT data FROM web_competition_config WHERE career_id=?',[input])?.data??JSON.stringify(defaultCompetitionConfig))),
+ const seasons=all('SELECT data FROM web_competition_seasons WHERE career_id=? ORDER BY number DESC',[input]).map(row=>JSON.parse(String(row.data)) as Season);
+ const current=get(input);
+ result={seasons,...(current?{rankings:buildCompetitionRankings(seasons,current,await loadWorld())}:{}),
+   config:validateCompetitionConfig(JSON.parse(String(read('SELECT data FROM web_competition_config WHERE career_id=?',[input])?.data??JSON.stringify(defaultCompetitionConfig)))),
    awards:all('SELECT * FROM web_competition_awards WHERE career_id=? ORDER BY season DESC,day DESC,competition_id',[input])};
  }else if(action==='competition-config'){
  const config=validateCompetitionConfig(input.config);
@@ -610,8 +666,30 @@ async function handleRequest(event:MessageEvent){
  const config=JSON.parse(String(read('SELECT data FROM web_competition_config WHERE career_id=?',[input])?.data??JSON.stringify(defaultCompetitionConfig)));
  const bonuses=Object.fromEntries(all('SELECT organization,SUM(reputation) gain FROM web_competition_awards WHERE career_id=? GROUP BY organization',[input]).map(row=>[String(row.organization),Number(row.gain)]));
  const start=nextSeasonStart(old,current.day),loans=loansFor(input),sport=loanPlayers(players,loans,start);
- const season=generateSeason(current,catalog,sport,loanContracts(sport,contractsFor(input),loans,start),(old?.number??0)+1,start,config,bonuses,old,true);
+ const history=current.mode==='MOBA'&&config.moba_world?.stageRules?.regionalSlots==='prestige'
+   ?all('SELECT data FROM web_competition_seasons WHERE career_id=? ORDER BY number DESC',[input]).map(row=>JSON.parse(String(row.data)) as Season)
+   :undefined;
+ const season=generateSeason(current,catalog,sport,loanContracts(sport,contractsFor(input),loans,start),(old?.number??0)+1,start,config,bonuses,old,true,history);
  storeNewSeason(run,read,input,season);result=season;
+ }else if(action==='enroll-competition'){
+ const current=get(input.careerId),players=await marketPlayers(input.careerId);
+ if(!current)throw Error('Carreira não encontrada.');
+ db.transaction(()=>{
+   const season=latestSeason(read,input.careerId),event=season?.editions.find(e=>e.id===input.id);
+   const own=season?.editions.flatMap(e=>e.participants).find(p=>p.id==='career');
+   if(!season||!event?.entryWindow||!own)throw Error('Torneio opcional não encontrado.');
+   if(!event.participants.some(p=>p.id==='career')){
+     const side=competitionSide(own,players,event.mode,current.day,current.id);
+     matchStrength(side,event.mode,current.day);
+     if(event.importRegion&&mobaImports(side.lineup,event.importRegion)>regionalPolicies[event.importRegion].limit)
+       throw Error('A escalação supera o limite de importados do torneio.');
+     if(optionalEventDays(event).some(day=>read('SELECT 1 FROM web_training_events WHERE career_id=? AND mode=? AND day=?',[current.id,event.mode,day])))
+       throw Error('Há treinamento agendado em uma das datas do torneio.');
+     enrollOptionalEvent(season,event.id,current.day,own);
+     run('UPDATE web_competition_seasons SET data=? WHERE career_id=? AND number=?',[JSON.stringify(season),current.id,season.number]);
+   }
+   result=season;
+ });
  }else if(action==='play-competition'){
  const season=latestSeason(read,input.careerId),current=get(input.careerId)!;
  const edition=season?.editions.find(e=>e.fixtures.some(g=>g.id===input.id)),game=edition?.fixtures.find(g=>g.id===input.id);
@@ -623,8 +701,17 @@ async function handleRequest(event:MessageEvent){
  const seed=Number(db.selectValue('SELECT seed FROM web_career_world WHERE career_id=?',[input.careerId]));
  db.transaction(()=>{
    players=maintainRosters(players,catalog,ownedIds(input.careerId),current.day,aiHiring(input.careerId,current.day));
+   const loans=loansFor(current.id);
+   lockCompetitionRosters(season,current.day,day=>registrationIds(current.id,day,loans));
    const teams=[game.home,game.away].map(id=>competitionSide(edition.participants.find(p=>p.id===id)!,players,edition.mode,current.day,input.careerId,undefined,edition.importRegion)) as [MatchSide,MatchSide];
-   const series=playCompetitionFixture(season,input.id,current.day,teams,seed,{strategy:input.strategy});
+   if(edition.registration){
+     const submitted=competitionLineup(edition,players,loanContracts(players,contractsFor(current.id),loans,current.day),current.day);
+     if(!submitted.valid&&!input.forfeit)throw Error('A escalação contém atletas inelegíveis ou funções sem titular. Selecione reservas registrados no elenco.');
+     if(input.forfeit&&submitted.valid)throw Error('A organização tem uma escalação elegível para a série.');
+     const own=teams.find(team=>team.id==='career')!;
+     own.lineup=submitted.lineup;
+   }else if(input.forfeit)throw Error('Resultado administrativo indisponível para esta edição.');
+   const series=playCompetitionFixture(season,input.id,current.day,teams,seed,{strategy:input.strategy},input.forfeit===true);
    for(const map of series.maps)players=applyMatchConditions(players,map);
    players=processAI(season,current.day,players,input.careerId,ownedIds(input.careerId),seed);
    writeMarketPlayers(input.careerId,players);
@@ -682,17 +769,22 @@ async function handleRequest(event:MessageEvent){
  }else if(action==='advance'){
  if(![1,7,30].includes(input.days))throw Error('Escolha 1, 7 ou 30 dias.');
  const advancingCareer=get(input.careerId)!;
- const marketCatalog=await loadWorld(),competition=latestSeason(read,input.careerId);
+ const marketCatalog=await loadWorld();
+ let competition=latestSeason(read,input.careerId);
  const seasonLoans=loansFor(input.careerId);
  let solo=read('SELECT start_day,end_day FROM web_solo_seasons WHERE career_id=? ORDER BY start_day DESC LIMIT 1',[input.careerId]);
  const observedRanked=new Set(watched(input.careerId));
  const regionalTeams=new Map(marketCatalog.teams.filter(team=>marketCatalog.leagues.some(league=>league.id===team.league&&league.discipline==='MOBA')).map(team=>[team.id,leagueMobaRegion(team.league)]));
  const careerRegion=competition?.editions.find(edition=>edition.importRegion&&edition.participants.some(team=>team.id==='career'))?.importRegion;
- const {days,stoppedAt}=planCompetitionAdvance(competition,input.expectedDay,input.days);
+ let {days,stoppedAt}=planCompetitionAdvance(competition,input.expectedDay,input.days);
  if(!days)throw Error('Nenhum dia avançado. Dispute o confronto pendente antes de avançar.');
  let players=await marketPlayers(input.careerId);
  const seed=Number(db.selectValue('SELECT seed FROM web_career_world WHERE career_id=?',[input.careerId]));
- const report=advanceCareerDay(run,read,all,input.careerId,input.expectedDay,days,(from,to)=>{
+ class NewFixtureDeadline extends Error{
+   readonly fixture:NonNullable<typeof stoppedAt>;
+   constructor(fixture:NonNullable<typeof stoppedAt>){super('Novo compromisso oficial');this.fixture=fixture;}
+ }
+ const advanceTo=()=>advanceCareerDay(run,read,all,input.careerId,input.expectedDay,days,(from,to)=>{
    run("UPDATE web_negotiations SET state='expired' WHERE career_id=? AND expires_day<? AND state IN ('accepted','counter')",[input.careerId,to]);
    const contracts=all(`SELECT player_id,start_day,salary,MIN(end_day,COALESCE((SELECT day-1 FROM web_contract_closures x
      WHERE x.career_id=c.career_id AND x.player_id=c.player_id AND x.start_day=c.start_day),end_day)) end_day
@@ -703,6 +795,9 @@ async function handleRequest(event:MessageEvent){
    const facilityLevels=Object.fromEntries(all('SELECT kind,level FROM web_facilities WHERE career_id=?',[input.careerId]).map(row=>[String(row.kind),Number(row.level)])) as Partial<FacilityLevels>;
    const coach=!!read('SELECT 1 FROM web_youth_coach WHERE career_id=?',[input.careerId]);
    const academy=new Set([...training].filter(([,row])=>row.academy).map(([id])=>id));
+   const gear=all('SELECT sku,quantity FROM web_equipment_stock WHERE career_id=?',[input.careerId]) as unknown as EquipmentStock[];
+   const mainRoster=contractsFor(input.careerId).filter(row=>!row.academy).length;
+   const practiceBonus=equipmentTraining(advancingCareer.mode as Mode,gear,mainRoster);
    const needsBaseline=new Set([...academy].filter(id=>!read('SELECT 1 FROM web_academy_snapshots WHERE career_id=? AND player_id=? LIMIT 1',[input.careerId,id])));
    recordAcademy(input.careerId,from,players,needsBaseline);
    const activeTryouts=all("SELECT player_id,start_day,end_day FROM web_tryouts WHERE career_id=? AND state='active'",[input.careerId]);
@@ -710,7 +805,7 @@ async function handleRequest(event:MessageEvent){
      AND NOT EXISTS(SELECT 1 FROM web_contracts c WHERE c.career_id=p.career_id AND c.player_id=p.player_id)`,[input.careerId]).map(row=>Number(row.player_id)));
    const plansFor=(id:number):TrainingPlan[]=>{
      const config=training.get(id),focus=config?.focus??'balanced';
-     const efficiency=Math.min(1.12,facilityEfficiency(facilityLevels,!!config?.academy)+(coach&&config?.academy?0.02:0));
+     const efficiency=Math.min(1.12,facilityEfficiency(facilityLevels,!!config?.academy)+(config?.academy?(coach?0.02:0):practiceBonus));
      return legacy.has(id)?[{focus,fromDay:config?.changed_day??1,toDay:to,efficiency}]:contracts.filter(c=>c.player_id===id)
        .map(c=>({focus,fromDay:Math.max(config?.changed_day??1,c.start_day),toDay:c.end_day,efficiency}));
    };
@@ -718,6 +813,8 @@ async function handleRequest(event:MessageEvent){
    const noTraining:TrainingPlan[]=[];
    const annual=seasonBoundaries(from,to);
    for(let day=from+1;day<=to;day++){
+     if(competition&&lockCompetitionRosters(competition,day,cutoff=>registrationIds(input.careerId,cutoff,seasonLoans)))
+       persistSeason(run,read,input.careerId,competition,day);
      if(!solo||day>Number(solo.end_day)){
        if(solo){
          run("UPDATE web_solo_seasons SET final=? WHERE career_id=? AND start_day=? AND final=''",
@@ -746,6 +843,8 @@ async function handleRequest(event:MessageEvent){
      if(competition?.editions.some(e=>e.fixtures.some(g=>isScheduledFixture(g)&&g.day<=day&&g.home!=='career'&&g.away!=='career'))){
        players=maintainRosters(players,marketCatalog,protectedIds,day,aiHiring(input.careerId,day));
        players=processAI(competition,day,players,input.careerId,protectedIds,seed);
+       const deadline=planCompetitionAdvance(competition,from,to-from).stoppedAt;
+       if(deadline)throw new NewFixtureDeadline(deadline);
      }
      if(day%28===0&&competition){
        const fixtures=contractFixtures(competition,day),indexed=new Map(players.map(player=>[player.id,player]));
@@ -845,6 +944,20 @@ async function handleRequest(event:MessageEvent){
      }
    }
  },(from,to)=>paySponsors(run,read,all,input.careerId,from,to));
+ let report;
+ while(true){
+   try{report=advanceTo();break;}
+   catch(error){
+     if(!(error instanceof NewFixtureDeadline))throw error;
+     // The calendar transaction rolled back. Replay only through the new
+     // fixture so payroll, development and results share the same cutoff.
+     stoppedAt=error.fixture;
+     days=stoppedAt.day-input.expectedDay;
+     competition=latestSeason(read,input.careerId);
+     solo=read('SELECT start_day,end_day FROM web_solo_seasons WHERE career_id=? ORDER BY start_day DESC LIMIT 1',[input.careerId]);
+     players=await marketPlayers(input.careerId);
+   }
+ }
  report.balance=Number(get(input.careerId)?.balance);
  result={report:{...report,advancedDays:days,requestedDays:input.days,blockedFixtureId:stoppedAt?.id},career:get(input.careerId)};
  }else if(action==='negotiations'){

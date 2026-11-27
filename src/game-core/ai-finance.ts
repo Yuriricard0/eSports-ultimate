@@ -34,7 +34,17 @@ export function payAiSalaries(run:Run,all:All,careerId:string,to:number){
 }
 export function aiCanBuy(read:Read,careerId:string,organization:string,player:Pick<Player,'overall'>,fee:number){
  const account=read('SELECT balance,arrears,payroll FROM web_ai_finances WHERE career_id=? AND organization=?',[careerId,organization]);
- return !!account&&Number(account.arrears)===0&&Number(account.balance)>=fee+Number(account.payroll)+terms(player.overall).salary;
+ if(!account||Number(account.arrears)>0)return false;
+ const payroll=Number(account.payroll),balance=Number(account.balance);
+ const profile=aiFinanceProfile(organization,balance,payroll);
+ const reserves={Conservadora:1.35,Equilibrada:1,Investidora:0.9,Reconstrução:1.6};
+ return balance>=fee+Math.ceil(payroll*reserves[profile])+terms(player.overall).salary;
+}
+export function aiFinanceProfile(organization:string,balance:number,payroll:number){
+ if(payroll>0&&balance<payroll*2)return 'Reconstrução';
+ const profiles=['Conservadora','Equilibrada','Investidora'] as const;
+ const seed=[...organization].reduce((hash,char)=>(Math.imul(hash,31)+char.charCodeAt(0))>>>0,0);
+ return profiles[seed%profiles.length];
 }
 export function aiPurchase(run:Run,read:Read,careerId:string,organization:string,player:Pick<Player,'id'|'overall'>,fee:number,day:number){
  if(!aiCanBuy(read,careerId,organization,player,fee))throw Error('O clube comprador não possui orçamento disponível.');
