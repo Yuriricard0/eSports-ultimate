@@ -35,6 +35,22 @@ function portalFixture(){
  return {season,edition};
 }
 
+test('loja filtra o catálogo, abre o produto correto e mantém inventário e setups acessíveis',()=>{
+ let bought='';
+ const app=appHarness({},[],'EquipmentShop',{career:{mode:'FPS'},players:[],busy:false,data:{balance:9999999,equipment:[],setups:[],equipmentPlayers:[]},
+   buy:(id:string)=>{bought=id;},assign:()=>{}});
+ app.render();
+ app.button('Computador').props.onClick();app.render();
+ assert.match(app.text(),/Computador Vector/);
+ assert.doesNotMatch(app.text(),/Mouse Vector/);
+ app.button('Computador Vector 3').props.onClick();app.render();
+ app.button('Comprar equipamento').props.onClick();assert.equal(bought,'fps-computer-3');
+ app.button('Inventário').props.onClick();app.render();
+ assert.match(app.text(),/Nenhum equipamento/);
+ app.button('Ver setups').props.onClick();app.render();
+ assert.match(app.text(),/primeiro setup/);
+});
+
 test('sala de troféus exibe somente conquistas da organização e abre o arquivo da edição',async()=>{
  const {season,edition}=portalFixture();
  edition.participants[0]={...edition.participants[0],id:'career',organization:'career'};

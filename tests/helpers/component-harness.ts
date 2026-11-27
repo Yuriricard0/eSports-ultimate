@@ -16,7 +16,7 @@ export function appHarness(repository:Record<string,unknown>,players:unknown[]=[
      queued.push(()=>{old?.cleanup?.();effects.set(index,{deps,cleanup:callback()});});},
  };
  const req=createRequire(import.meta.url),file=resolve(`src/app/${entry}.tsx`),exports:any={};
- const compile=(path:string)=>ts.transpileModule(readFileSync(path,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
+ const compile=(path:string)=>ts.transpileModule(readFileSync(path,'utf8').replaceAll('import.meta.env.BASE_URL','"/"'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
  const source=compile(file),preferences={};
  runInNewContext(compile(resolve('src/app/view-preferences.ts')),{exports:preferences,require:()=>hooks});
  runInNewContext(source,{exports,console,localStorage:{getItem:(key:string)=>storage.get(key)??null,

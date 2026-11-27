@@ -3,8 +3,7 @@ import type {Career} from '../game-core/career';
 import type {Player} from '../game-core/recruitment';
 import {facilityDefinitions,sponsorSpecialty,type CashCategory,type FacilityKind} from '../game-core/finance';
 import {formatCareerDay} from '../game-core/calendar';
-import {acceptSponsorship,assignEquipment,buyEquipment,improveFacility,listFinances,rejectSponsorship,type FinanceState} from '../persistence/repository';
-import {EquipmentShop} from './EquipmentShop';
+import {acceptSponsorship,improveFacility,listFinances,rejectSponsorship,type FinanceState} from '../persistence/repository';
 import {Headquarters} from './Headquarters';
 import {equipmentCatalog,sponsorKit,sponsorKitCount,sponsorCashOnlyValue} from '../game-core/equipment';
 import {money} from './Players';
@@ -44,7 +43,7 @@ function SponsorName({offer}:{offer:FinanceState['sponsors'][number]}){
  const hue=[...offer.company].reduce((sum,char)=>sum+char.charCodeAt(0),0)%360;
  return <h3 className="sponsor-name"><span aria-hidden="true" style={{background:`hsl(${hue} 47% 28%)`}}>{offer.company.slice(0,2).toUpperCase()}</span>{offer.company}</h3>;
 }
-export function Finances({career,players,onUpdated,onCalendar}:{career:Career;players:Player[];onUpdated:(career:Career)=>Promise<void>;onCalendar:()=>void}){
+export function Finances({career,players,onUpdated,onCalendar,onShop}:{career:Career;players:Player[];onUpdated:(career:Career)=>Promise<void>;onCalendar:()=>void;onShop:()=>void}){
  const [data,setData]=useState<FinanceState|null>(null),[season,setSeason]=useState(0),[page,setPage]=useState(0);
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  useEffect(()=>{
@@ -118,13 +117,7 @@ export function Finances({career,players,onUpdated,onCalendar}:{career:Career;pl
        </article>)}</div>
        {!!history.length&&<details><summary>Histórico de propostas e contratos</summary><ul>{history.map(s=><li key={s.id}>{s.company} · {s.state==='accepted'?'Encerrado':s.state==='rejected'?'Recusada':'Expirada'} · {sponsorValue(s)} · {s.duration} dias</li>)}</ul></details>}
      </section>
-     <EquipmentShop data={data} career={career} players={players} busy={busy}
-       buy={sku=>{
-         const product=equipmentCatalog.find(item=>item.id===sku);
-         if(product&&window.confirm(`Comprar ${product.name} por ${money(product.price)}?`))
-           void perform(async()=>{await onUpdated(await buyEquipment(career.id,sku,1));},'Equipamento adicionado ao inventário.');
-       }}
-       assign={(player,category,sku)=>void perform(async()=>{await assignEquipment(career.id,player,category,sku);},'Setup atualizado.')}/>
+     <section className="panel"><h2>Equipamentos</h2><button onClick={onShop}>Abrir loja e inventário →</button></section>
      <Headquarters career={career} data={data}>
        <div className="finance-cards">{(Object.keys(facilityDefinitions) as FacilityKind[]).map(kind=>{
          const definition=facilityDefinitions[kind],level=data.facilities.find(f=>f.kind===kind)?.level??0,cost=definition.costs[level];
