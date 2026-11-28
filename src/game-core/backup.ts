@@ -19,6 +19,8 @@ const tables={
   web_payroll:['career_id','player_id','start_day','due_day','amount','paid'],
   web_identity:['career_id','config'],
   web_uniforms:['career_id','variant','config'],
+  web_travel_policy:['career_id','data'],
+  web_travel_bookings:['career_id','fixture_id','booked_day','automatic','applied','data'],
   web_godot_source:['career_id','file'],
   web_save_names:['career_id','name'],
   web_save_versions:['career_id','created_version'],

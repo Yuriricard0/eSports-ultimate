@@ -9,10 +9,12 @@ import {activityNames} from '../game-core/training-week';
 import {getTrainingAgenda,listPayroll,listMatches,listCompetitions,type PayrollEntry,type TrainingAgendaItem} from '../persistence/repository';
 import {money} from './Players';
 import {useViewPreference} from './view-preferences';
+import {CareerOperations} from './CareerOperations';
 
-export function CareerCalendar({career,players,contracts,advance,busy,report,onMatches,onCompetitions,onOpenFixture,onRoster,onTraining}:{
+export function CareerCalendar({career,players,contracts,advance,busy,report,onMatches,onCompetitions,onOpenFixture,onRoster,onTraining,onOperationsUpdate,navigate}:{
   career:Career;players:Player[];contracts:Contract[];advance:(days:number)=>void;busy:boolean;report?:CalendarResult;onMatches:()=>void;onCompetitions:()=>void;onOpenFixture:(id:string)=>void;onRoster:()=>void;
   onTraining?:()=>void;
+  onOperationsUpdate?:(career:Career)=>Promise<void>;navigate?:(screen:string)=>void;
 }){
   const [rows,setRows]=useState<PayrollEntry[]|null>(null);
   const [error,setError]=useState('');
@@ -23,6 +25,7 @@ export function CareerCalendar({career,players,contracts,advance,busy,report,onM
   const [onlyOwn,setOnlyOwn]=useViewPreference(`${career.id}:calendar:own`,true);
   const [forecasts,setForecasts]=useViewPreference(`${career.id}:calendar:forecasts`,false);
   const [agendaPage,setAgendaPage]=useState(0);
+  const [operationsOpen,setOperationsOpen]=useState(false);
   useEffect(()=>{
     let active=true;
     setScheduleError('');
@@ -48,6 +51,9 @@ export function CareerCalendar({career,players,contracts,advance,busy,report,onM
   const activePage=Math.min(page,Math.max(0,Math.ceil(entries.length/20)-1));
   return <>
     <h1>Calendário</h1>
+    {onOperationsUpdate&&navigate&&<details className="panel" onToggle={event=>setOperationsOpen(event.currentTarget.open)}><summary>Delegação e viagens</summary>
+      {operationsOpen&&<CareerOperations career={career} onUpdated={onOperationsUpdate} navigate={navigate}/>}
+    </details>}
     <p>{formatCareerDay(career.day)} · Dia {career.day} · Saldo {money(career.balance)}</p>
     <button onClick={onMatches}>Amistosos e resultados →</button>
     <div className="advance-actions">{[1,7,30].map(days=><button key={days} disabled={busy} onClick={()=>advance(days)}>

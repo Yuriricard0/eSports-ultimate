@@ -13,13 +13,14 @@ import {careerCreationVersion} from '../version';
 import {contractSchema,selectStarter,terms,type Contract,type Player} from '../game-core/recruitment';
 import {contractFixtures,contractParticipation,expectationDelta,expiryLevel,renewalGrounds,type SquadRole} from '../game-core/contract-expectations';
 import {advanceCareerDay,calendarVersion,migrateCalendar,salaryDue} from '../game-core/calendar';
-import {cashProjection,paymentPeriods,type ScheduledCash} from '../game-core/finance-projection';
+import {cashProjection,paymentPeriods,realizedCash,type ScheduledCash} from '../game-core/finance-projection';
 import {countryRegions} from '../game-core/countries';
+import {defaultTravelPolicy,operationsSchema,recordTravel,travelBudgetRemaining,travelOptions,validateTravelPolicy,type TravelPolicy,type TravelRecord} from '../game-core/operations';
 import {equipmentCatalog,equipmentCategories,setupTraining,sponsorCashOnlyValue,type EquipmentAssignment} from '../game-core/equipment';
 import {defaultIdentity,phaseOneSchema,validateIdentity} from '../game-core/identity';
 import {validateUniform,uniformVariants,type Uniforms} from '../game-core/uniform';
 import {assertBackupFile,readGodotCareer,readGodotRoster,restoreWebBackup} from '../game-core/backup';
-import type {Mode} from '../game-core/attributes';
+import {overall,roles,type Mode} from '../game-core/attributes';
 import {startingEntry} from '../game-core/entry';
 import type {WorldCatalog} from '../game-core/world';
 import {addRankedProspects,addWorldTraits,generateWorld,generationVersion} from '../game-core/generation';
@@ -107,7 +108,7 @@ const initialized=(async()=>{
  if(/CHECK\s*\(\s*bonus\s*>\s*0\s*\)/i.test(String(db.selectValue("SELECT sql FROM sqlite_schema WHERE name='web_contracts'")))){
    migrateZeroSigningBonus(sql=>{db.exec(sql);});
  }
- db.exec(contractSchema+phaseOneSchema+negotiationSchema+matchSchema+competitionSchema+newsSchema+saveVersionSchema+favoriteLineupSchema+approachSchema+marketTargetsSchema+loanSchema+talentSchema+soloQueueSchema+academyEvaluationSchema+trainingWeekSchema);
+ db.exec(contractSchema+phaseOneSchema+negotiationSchema+matchSchema+competitionSchema+newsSchema+saveVersionSchema+favoriteLineupSchema+approachSchema+marketTargetsSchema+loanSchema+talentSchema+soloQueueSchema+academyEvaluationSchema+trainingWeekSchema+operationsSchema);
  db.transaction(()=>{
    for(const row of db.selectObjects('SELECT id FROM careers'))initializeFinance((sql,bind)=>{db.exec({sql,bind});},(sql,bind)=>db.selectObject(sql,bind),(sql,bind)=>db.selectObjects(sql,bind),String(row.id));
    db.exec('PRAGMA user_version=10;');
@@ -127,6 +128,13 @@ async function handleRequest(event:MessageEvent){
  const run=(sql:string,bind:(string|number)[])=>{db.exec({sql,bind});};
  const read=(sql:string,bind:(string|number)[])=>db.selectObject(sql,bind);
  const all=(sql:string,bind:(string|number)[])=>db.selectObjects(sql,bind);
+ const travelPolicy=(career:Career):TravelPolicy=>{
+   const data=read('SELECT data FROM web_travel_policy WHERE career_id=?',[career.id])?.data;
+   return typeof data==='string'?validateTravelPolicy(JSON.parse(data),career.mode):defaultTravelPolicy(career.mode);
+ };
+ const travelRecords=(careerId:string):TravelRecord[]=>all('SELECT booked_day,automatic,applied,data FROM web_travel_bookings WHERE career_id=? ORDER BY booked_day DESC,fixture_id',[careerId])
+   .map(row=>({...JSON.parse(String(row.data)),bookedDay:Number(row.booked_day),automatic:Boolean(row.automatic),applied:Boolean(row.applied)}));
+ const logisticsReady=(id:string)=>Boolean(read("SELECT 1 FROM web_facilities WHERE career_id=? AND kind='training' AND level>=1",[id]));
  const ownedIds=(careerId:string)=>new Set([
    ...db.selectObjects('SELECT player_id FROM web_current_contracts WHERE career_id=?',[careerId]),
    ...db.selectObjects('SELECT player_id FROM web_imported_players p WHERE career_id=? AND member=1 AND NOT EXISTS(SELECT 1 FROM web_contracts c WHERE c.career_id=p.career_id AND c.player_id=p.player_id)',[careerId]),
@@ -621,6 +629,11 @@ async function handleRequest(event:MessageEvent){
  const periodEnd=Math.min(current.day,next?next.startDay-1:current.day);
  const totals=read(`SELECT COALESCE(SUM(CASE WHEN amount>0 THEN amount ELSE 0 END),0) income,
    COALESCE(SUM(CASE WHEN amount<0 THEN -amount ELSE 0 END),0) expenses FROM web_cash_events WHERE career_id=? AND day BETWEEN ? AND ?`,[current.id,periodStart,periodEnd])!;
+ const realized=all(`SELECT day,SUM(CASE WHEN amount>0 THEN amount ELSE 0 END) income,
+   SUM(CASE WHEN amount<0 THEN -amount ELSE 0 END) expenses,
+   SUM(CASE WHEN category IN ('sponsor','salary','travel') THEN amount ELSE 0 END) operating FROM web_cash_events
+   WHERE career_id=? AND day BETWEEN ? AND ? GROUP BY day`,[current.id,Math.max(1,current.day-179),current.day])
+   .map(row=>({day:Number(row.day),income:Number(row.income),expenses:Number(row.expenses),operating:Number(row.operating)}));
  const sponsors=all('SELECT * FROM web_sponsors WHERE career_id=? ORDER BY offered_day DESC,id',[current.id]);
  const outstanding=Number(read('SELECT COALESCE(SUM(amount-paid),0) total FROM web_payroll WHERE career_id=?',[current.id])?.total??0);
  const equipmentPlayers=ownedIds(current.id);
@@ -639,13 +652,14 @@ async function handleRequest(event:MessageEvent){
  result={balance:current.balance,reputation:current.reputation??40,recognition,periodStart,periodEnd,seasons:seasons.map(s=>({number:s.number,year:s.year,startDay:s.startDay})),
    income:Number(totals.income),expenses:Number(totals.expenses),result:Number(totals.income)-Number(totals.expenses),
    payroll:Number(read('SELECT COALESCE(SUM(salary),0) total FROM web_current_contracts WHERE career_id=?',[current.id])?.total??0),
-   outstanding,projection:cashProjection(current.day,current.balance,outstanding,schedule),
+   outstanding,projection:cashProjection(current.day,current.balance,outstanding,schedule),realized:realizedCash(current.day,current.balance,realized),
    openingBalance:Number(read('SELECT opening_balance FROM web_finance_state WHERE career_id=?',[current.id])?.opening_balance),
    ledgerTotal:Number(read('SELECT COALESCE(SUM(amount),0) total FROM web_cash_events WHERE career_id=?',[current.id])?.total??0),
    sponsors,equipment:all('SELECT sku,quantity FROM web_equipment_stock WHERE career_id=? ORDER BY sku',[current.id]),
    equipmentPlayers:[...equipmentPlayers],setups:all('SELECT player_id,category,sku,unit FROM web_equipment_setup WHERE career_id=?',[current.id]).filter(row=>equipmentPlayers.has(Number(row.player_id))),
    facilities:all('SELECT kind,level,upgraded_day FROM web_facilities WHERE career_id=?',[current.id]),
    facilityInvestment:Number(read("SELECT COALESCE(-SUM(amount),0) total FROM web_cash_events WHERE career_id=? AND category='facility'",[current.id])?.total??0),
+   investments:all("SELECT event_key,day,amount,description FROM web_cash_events WHERE career_id=? AND category IN ('facility','equipment') AND amount<0 ORDER BY day DESC,rowid DESC LIMIT 30",[current.id]),
    transactions:all('SELECT event_key,day,category,amount,description FROM web_cash_events WHERE career_id=? AND day BETWEEN ? AND ? ORDER BY day DESC,rowid DESC LIMIT 200',[current.id,periodStart,periodEnd])};
  }else if(action==='sponsor-accept'){
  acceptSponsor(run,read,input.careerId,input.id,get(input.careerId)?.reputation??40);result=get(input.careerId);
@@ -755,12 +769,67 @@ async function handleRequest(event:MessageEvent){
      const own=teams.find(team=>team.id==='career')!;
      own.lineup=submitted.lineup;
    }else if(input.forfeit)throw Error('Resultado administrativo indisponível para esta edição.');
+   const booking=travelRecords(current.id).find(row=>row.fixtureId===game.id&&!row.applied&&row.matchDay===game.day);
+   if(booking&&!input.forfeit&&current.day>=booking.matchDay){
+     const own=teams.find(team=>team.id==='career')!;
+     const updates=new Map(own.lineup.map(slot=>{
+       const condition=playerCondition(slot.player,current.day);
+       const athlete={...slot.player,condition:{...condition,day:current.day,fatigue:Math.min(100,condition.fatigue+booking.fatigue)}};
+       slot.player=athlete;
+       return [athlete.id,athlete];
+     }));
+     players=players.map(player=>updates.get(player.id)??player);
+     run('UPDATE web_travel_bookings SET applied=1 WHERE career_id=? AND fixture_id=?',[current.id,game.id]);
+   }
    const series=playCompetitionFixture(season,input.id,current.day,teams,seed,{strategy:input.strategy},input.forfeit===true);
    for(const map of series.maps)players=applyMatchConditions(players,map);
    players=processAI(season,current.day,players,input.careerId,ownedIds(input.careerId),seed);
    writeMarketPlayers(input.careerId,players);
  });
  result={career:get(input.careerId),season};
+ }else if(action==='travel-state'||action==='travel-policy'||action==='travel-book'){
+   const current=get(input.careerId);
+   if(!current)throw Error('Carreira não encontrada.');
+   if(action==='travel-policy'){
+     const policy=validateTravelPolicy(input.policy,current.mode);
+     if(policy.mode==='automatic'&&!logisticsReady(current.id))throw Error('A automação exige um centro de treinamento de nível 1 para a coordenação operacional.');
+     run('INSERT INTO web_travel_policy VALUES(?,?) ON CONFLICT(career_id) DO UPDATE SET data=excluded.data',[current.id,JSON.stringify(policy)]);
+     result=policy;
+   }else{
+     const bookings=travelRecords(current.id),season=latestSeason(read,current.id);
+     const options=travelOptions(current,season,current.day,bookings);
+     if(action==='travel-book'){
+       const trip=options.find(item=>item.fixtureId===input.fixtureId&&item.standard===input.standard);
+       if(!trip)throw Error('Viagem indisponível, já reservada ou em conflito com outro compromisso.');
+       if(input.total!==trip.total)throw Error('O custo mudou. Atualize a cotação antes de reservar.');
+       db.transaction(()=>{
+         if(!recordTravel(run,read,current.id,trip,current.day,false,trip.total))throw Error('Saldo insuficiente ou viagem já reservada.');
+       });
+       result=get(current.id);
+     }else{
+       const policy=travelPolicy(current),recommendations:Partial<Record<keyof NonNullable<TravelPolicy['recommend']>,string>>={};
+       const currentContracts=contractsFor(current.id).filter(contract=>!contract.academy);
+       const count=(sql:string,bind:(string|number)[])=>Number(read(sql,bind)?.n??0);
+       if(policy.recommend?.training){
+         const upcoming=count("SELECT COUNT(*) n FROM web_training_events WHERE career_id=? AND mode=? AND day BETWEEN ? AND ? AND done=0",[current.id,current.mode,current.day,current.day+6]);
+         recommendations.training=upcoming?`${upcoming} atividade(s) de treino nos próximos sete dias. Revise as datas.`:'Nenhum treino planejado para os próximos sete dias.';
+       }
+       if(policy.recommend?.lineup){
+         const missing=Math.max(0,5-currentContracts.filter(contract=>contract.starter).length);
+         recommendations.lineup=missing?`${missing} vaga(s) entre os titulares. Consulte os reservas elegíveis.`:'O elenco principal tem cinco vagas preenchidas. Confira a cobertura.';
+       }
+       if(policy.recommend?.scouting)recommendations.scouting=`${watched(current.id).length} atleta(s) da ranked acompanhados.`;
+       if(policy.recommend?.market){
+         const pending=count("SELECT COUNT(*) n FROM web_negotiations WHERE career_id=? AND state IN ('accepted','counter') AND expires_day>=?",[current.id,current.day]);
+         recommendations.market=`${pending} proposta(s) ou contraproposta(s) válidas para revisar.`;
+       }
+       if(policy.recommend?.equipment){
+         const equipped=new Set(all('SELECT DISTINCT player_id FROM web_equipment_setup WHERE career_id=?',[current.id]).map(row=>Number(row.player_id)));
+         recommendations.equipment=`${currentContracts.filter(contract=>!equipped.has(contract.player_id)).length} atleta(s) do elenco principal sem item atribuído.`;
+       }
+       result={options,bookings,policy,recommendations,logisticsReady:logisticsReady(current.id),balance:current.balance};
+     }
+   }
  }else if(action==='calendar'){
  result=db.selectObjects('SELECT player_id, due_day, amount, paid FROM web_payroll WHERE career_id=? ORDER BY due_day DESC,player_id',[input]);
  }else if(action==='matches'){
@@ -985,7 +1054,30 @@ async function handleRequest(event:MessageEvent){
        run('DELETE FROM web_training_focus_overrides WHERE career_id=? AND player_id=?',key);
      }
    }
- },(from,to)=>paySponsors(run,read,all,input.careerId,from,to));
+ },(from,to)=>{
+   paySponsors(run,read,all,input.careerId,from,to);
+   const policy=travelPolicy(advancingCareer);
+   if(policy.mode!=='automatic'||!logisticsReady(advancingCareer.id))return;
+   const reserve=contractsFor(advancingCareer.id).reduce((sum,contract)=>sum+contract.salary,0)+Number(read(
+     'SELECT COALESCE(SUM(amount-paid),0) n FROM web_payroll WHERE career_id=? AND paid<amount',[advancingCareer.id])?.n??0);
+   const bookings=travelRecords(advancingCareer.id);
+   const contracts=contractsFor(advancingCareer.id),mode=advancingCareer.mode as Mode;
+   const availableFor=(matchDay:number)=>{
+     const available=loanContracts(players,contracts,seasonLoans,matchDay).filter(contract=>contract.end_day===0||contract.end_day>=matchDay);
+     const lineup=careerLineup(players,available);
+     return lineup.length===roles[mode].length&&roles[mode].every(role=>lineup.some(slot=>slot.role===role&&slot.player.mode===mode&&
+       !slot.player.status&&overall(slot.player.attributes,mode,role)>=1));
+   };
+   for(let day=from+1;day<=to;day++){
+     const trips=travelOptions(advancingCareer,competition,day,bookings).filter(item=>item.departure===day&&item.standard===policy.standard);
+     for(const trip of trips){
+       if(!availableFor(trip.matchDay))continue;
+       if(!travelOptions(advancingCareer,competition,day,bookings).some(item=>item.fixtureId===trip.fixtureId&&item.standard===trip.standard))continue;
+       if(recordTravel(run,read,advancingCareer.id,trip,day,true,travelBudgetRemaining(policy,bookings,day),reserve))
+         bookings.push({...trip,bookedDay:day,automatic:true,applied:false});
+     }
+   }
+ });
  let report;
  while(true){
    try{report=advanceTo();break;}

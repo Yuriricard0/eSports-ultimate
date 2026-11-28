@@ -4,7 +4,7 @@ type Row=Record<string,unknown>;
 type Run=(sql:string,bind:Bind)=>void;
 type Read=(sql:string,bind:Bind)=>Row|undefined;
 type All=(sql:string,bind:Bind)=>Row[];
-export type CashCategory='signing'|'salary'|'sale'|'prize'|'sponsor'|'facility'|'equipment';
+export type CashCategory='signing'|'salary'|'sale'|'prize'|'sponsor'|'facility'|'equipment'|'travel';
 export type FacilityKind='training'|'academy'|'scouting';
 export type FacilityLevels=Record<FacilityKind,number>;
 export const facilityDefinitions={

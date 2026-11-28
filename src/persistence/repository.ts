@@ -44,7 +44,7 @@ const saveActions=new Set(['delete','create','import','identity','uniform','rena
  'start-season','competition-config','enroll-competition','play-competition','sponsor-accept','sponsor-reject','facility-upgrade','equipment-buy','equipment-assign','assign-academy',
  'set-training','submit-offer','confirm-offer','cancel-offer','renew-contract','decline-renewal','depart-player','advance',
  'lineup-favorite-create','lineup-favorite-rename','lineup-favorite-delete','lineup-favorite-apply','create-loan','start-tryout','dismiss-tryout','youth-coach',
- 'training-model-save','training-model-rename','training-model-delete','training-week-apply','training-event-plan','training-event-complete','training-event-cancel']);
+ 'training-model-save','training-model-rename','training-model-delete','training-week-apply','training-event-plan','training-event-complete','training-event-cancel','travel-policy','travel-book']);
 function request<T>(action:string,input?:unknown):Promise<T>{
  const send=()=>new Promise<T>((resolve,reject)=>{
  if(storageFailure){reject(storageFailure);return;}
@@ -109,6 +109,7 @@ export const saveCompetitionConfig=(careerId:string,config:CompetitionConfig)=>r
 export const playCompetitiveFixture=(careerId:string,id:string,strategy?:Strategy,forfeit=false)=>request<{career:Career;season:Season}>('play-competition',{careerId,id,strategy,forfeit});
 export type Sponsor={id:string;company:string;payment:number;duration:number;min_reputation:number;offered_day:number;expires_day:number;state:'pending'|'accepted'|'rejected'|'expired';accepted_day:number};
 export type FinanceState={balance:number;reputation:number;recognition:number;periodStart:number;periodEnd:number;income:number;expenses:number;result:number;payroll:number;outstanding:number;openingBalance:number;ledgerTotal:number;projection:import('../game-core/finance-projection').FinanceProjection;
+ realized:ReturnType<typeof import('../game-core/finance-projection').realizedCash>;investments:{event_key:string;day:number;amount:number;description:string}[];
  seasons:{number:number;year:number;startDay:number}[];sponsors:Sponsor[];facilities:{kind:FacilityKind;level:number;upgraded_day:number}[];equipment:import('../game-core/equipment').EquipmentStock[];
  setups:import('../game-core/equipment').EquipmentAssignment[];equipmentPlayers:number[];facilityInvestment:number;
  transactions:{event_key:string;day:number;category:CashCategory;amount:number;description:string}[]};
@@ -141,6 +142,10 @@ export type TimelineEntry={day:number;player_id:number;kind:'hired'|'expired'|'s
 export const listTimeline=(careerId:string)=>request<TimelineEntry[]>('timeline',careerId);
 export const listPlayerMilestones=(careerId:string,playerId:number)=>request<PlayerMilestone[]>('player-milestones',{careerId,playerId});
 export const listPayroll=(careerId:string)=>request<PayrollEntry[]>('calendar',careerId);
+export type TravelState={options:Trip[];bookings:TravelRecord[];policy:TravelPolicy;recommendations:Partial<Record<keyof NonNullable<TravelPolicy['recommend']>,string>>;logisticsReady:boolean;balance:number};
+export const getTravelState=(careerId:string)=>request<TravelState>('travel-state',{careerId});
+export const saveTravelPolicy=(careerId:string,policy:TravelPolicy)=>request<TravelPolicy>('travel-policy',{careerId,policy});
+export const bookTravel=(careerId:string,trip:Trip)=>request<Career>('travel-book',{careerId,fixtureId:trip.fixtureId,standard:trip.standard,total:trip.total});
 export const advanceDays=(careerId:string,expectedDay:number,days:number)=>
  request<{report:CalendarResult;career:Career}>('advance',{careerId,expectedDay,days});
 
@@ -150,3 +155,4 @@ export const declineApproach=(careerId:string,playerId:number,team:string,offerD
 
 export const loadMarketOverview=(careerId:string)=>request<{targets:number[];usage:Array<[number,import('../game-core/market-overview').MarketUsage]>}>('market-overview',careerId);
 export const setMarketTarget=(careerId:string,playerId:number,tracked:boolean)=>trackSave(()=>request<number[]>('market-target',{careerId,playerId,tracked}));
+import type {TravelPolicy,TravelRecord,Trip} from '../game-core/operations';
